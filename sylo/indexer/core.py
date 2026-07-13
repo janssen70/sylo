@@ -10,7 +10,7 @@ from ..receiver.envelope import MessageEnvelope
 from ..stats import QueueStats
 from ..timeutil import format_receipt_time
 from .config import IndexerConfig
-from .schema import INSERT_SQL, apply_schema
+from .schema import apply_schema, insert_message
 
 logger = logging.getLogger("sylo.indexer")
 
@@ -35,18 +35,16 @@ def _insert_batch(
     inserted = 0
     for envelope in envelopes:
         try:
-            conn.execute(
-                INSERT_SQL,
-                (
-                    format_receipt_time(envelope.receipt_time),
-                    envelope.source_ip,
-                    envelope.facility,
-                    envelope.severity,
-                    envelope.host,
-                    envelope.tag,
-                    envelope.message,
-                    int(envelope.malformed),
-                ),
+            insert_message(
+                conn,
+                receipt_time=format_receipt_time(envelope.receipt_time),
+                source_ip=envelope.source_ip,
+                facility=envelope.facility,
+                severity=envelope.severity,
+                host=envelope.host,
+                tag=envelope.tag,
+                message=envelope.message,
+                malformed=envelope.malformed,
             )
             inserted += 1
         except sqlite3.Error:

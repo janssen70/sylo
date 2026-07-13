@@ -1,0 +1,6 @@
+<div class="tail-row {{ 'malformed' if row.malformed else '' }}">
+  <span class="ts">{{ row.receipt_time }}</span>
+  <span class="host">{{ row.host or row.source_ip }}</span>
+  <span class="tag">{{ row.tag or '' }}</span>
+  <span class="msg">{{ row.message }}</span>
+</div>

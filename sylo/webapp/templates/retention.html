@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Retention settings - sylo{% endblock %}
+{% block content %}
+<h1>Retention settings</h1>
+{% if saved %}<p class="success">Saved.</p>{% endif %}
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<form method="post" action="/settings/retention">
+  <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+  <label>Retention (days) <input type="number" name="retention_days" min="1" value="{{ retention_days }}"></label>
+  <button type="submit">Save</button>
+</form>
+<p class="hint">Messages older than this are dropped a whole month-partition at a time (raw files and index), never the current partition.</p>
+{% endblock %}

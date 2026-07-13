@@ -26,7 +26,7 @@
 
 ## 2. Storage / indexer spec
 - [x] Source-of-truth: rotating plain text files (open format, always readable even if index breaks)
-- [x] Index: SQLite (WAL mode), schema with indexes on (timestamp), (host, timestamp), (severity, timestamp), (facility, timestamp) -- composite indexes chosen over single-column ones since section 3's filters always pair a dimension with a time range/order
+- [x] Index: SQLite (WAL mode), schema with indexes on (timestamp), (host, timestamp), (severity, timestamp), (facility, timestamp) -- composite indexes chosen over single-column ones since section 3's filters always pair a dimension with a time range/order. Also an external-content FTS5 table (`messages_fts`) over message/host/tag for section 3's free-text filter -- a plain `LIKE '%term%'` scan wasn't going to stay interactive anywhere near the 110M-row/year ceiling. Kept in sync on insert only (no update/delete triggers), since retention only ever drops a whole month's DB file, never individual rows.
 - [x] Partitioning strategy: one DB/table-set per month to bound size and simplify retention drops
 - [x] Indexer placement: **embedded in receiver process** (own asyncio task/queue, not the UI process). Chosen over separate process — write path is expected to stabilize quickly and change rarely, while search/lookup will see considerable rework, so isolating "likely to change" (indexer/UI) from "rarely changes" (receiver) matters more here than a hard process boundary.
   - Safety nets to preserve ingest isolation despite sharing a process:
@@ -37,14 +37,14 @@
 - [x] Recovery: indexer can rebuild index from text files if SQLite is lost/corrupted (`python -m sylo.indexer.rebuild --data-dir ... --index-dir ...`, optionally scoped to specific `--month`s; deletes and recreates the targeted month DB(s) before reinserting)
 
 ## 3. HTTP / UI spec
-- [ ] Server: FastAPI + uvicorn (Python), single process, separate from receiver
-- [ ] Bind: 127.0.0.1 only in v1; config flag reserved for future LAN bind
-- [ ] API: paginated `/api/messages` with filters (host, severity, facility, time range, free-text)
-- [ ] Live tail: WebSocket or SSE endpoint
-- [ ] Frontend: server-rendered + htmx (no SPA build step)
-- [ ] Read path only touches SQLite index, never raw files, never blocks receiver
-- [ ] `/healthz` endpoint for supervisor/auto-restart
-- [ ] Pages: message browser/search, live tail, retention settings, device/source list
+- [x] Server: FastAPI + uvicorn (Python), single process, separate from receiver (`sylo/webapp`, run via `python -m sylo.webapp.main`)
+- [x] Bind: 127.0.0.1 only in v1; config flag reserved for future LAN bind (`SYLO_WEB_BIND_HOST`)
+- [x] API: paginated `/api/messages` with filters (host, severity, facility, time range, free-text via FTS5). Pagination spans multiple monthly DB files by querying each for its own top (offset+limit+1) matches, merging, and re-sorting -- exact for the page returned; bounded to a configurable number of recent months when no explicit time range is given, to avoid an unbounded full-history scan by default.
+- [x] Live tail: **SSE** chosen over WebSocket (one-directional data, simpler than a WS handshake, and htmx has a matching first-party SSE extension). Implemented as a polling loop (configurable interval, default 1.5s) over the current month's index DB rather than any cross-process pub/sub -- keeps the read path's "only touches SQLite" property intact.
+- [x] Frontend: server-rendered + htmx (no SPA build step); htmx + its SSE extension vendored locally under `sylo/webapp/static/` (no external runtime/CDN dependency, consistent with section 5's packaging goal)
+- [x] Read path only touches SQLite index, never raw files, never blocks receiver (webapp is a fully separate process; each query opens its own short-lived read connection to the relevant monthly DB file(s))
+- [x] `/healthz` endpoint for supervisor/auto-restart (no auth required, deliberately cheap -- no DB/receiver checks)
+- [x] Pages: message browser/search (`/messages`, htmx-paginated), live tail (SSE panel on the same page), retention settings (`/settings/retention`), device/source list (`/devices`)
 
 ## 4. Retention manager spec
 - [ ] Default: 1 year, user-configurable (per-install setting, UI-editable)
@@ -60,9 +60,9 @@
 - [ ] No external runtime dependencies required (no separate Python/DB install needed by end user)
 
 ## 6. Auth / security spec
-- [x] Auth model: single local admin account (created at install/first-run), backed by a real `users` table (id, username, password_hash, created_at) rather than a hardcoded credential — keeps the door open to adding accounts later without redesign. Password hashed with **bcrypt** (chosen over argon2: simpler pure-Python packaging for PyInstaller, no C-extension build headaches; security difference is not material at single-local-admin scale). Server-side sessions (random token in HTTP-only cookie, session data kept server-side). Login rate-limiting/backoff on repeated failures. CSRF protection on state-changing endpoints (retention settings, config). One policy applied consistently regardless of whether accessed via localhost or later via reverse proxy.
-- [ ] TLS: not needed for localhost v1; reverse proxy handles TLS termination at scale-out stage
-- [ ] Input validation on receiver side against malformed/oversized/malicious syslog payloads (parser must never crash on garbage input)
+- [x] Auth model: single local admin account (created at install/first-run), backed by a real `users` table (id, username, password_hash, created_at) rather than a hardcoded credential — keeps the door open to adding accounts later without redesign. Password hashed with **bcrypt** (chosen over argon2: simpler pure-Python packaging for PyInstaller, no C-extension build headaches; security difference is not material at single-local-admin scale). Server-side sessions (random token in HTTP-only cookie, session data kept server-side, in a control-plane `app.sqlite3` separate from the monthly message-index DBs). Login rate-limiting/backoff on repeated failures (in-memory sliding window per client IP, process-local by design). CSRF protection on state-changing endpoints (retention settings, logout) via a per-session token. One policy applied consistently regardless of whether accessed via localhost or later via reverse proxy. Default admin password is either `SYLO_ADMIN_PASSWORD` or a randomly generated one logged once on first run -- the installer (section 5) will eventually prompt for it instead, but that's not built yet.
+- [x] TLS: not needed for localhost v1; reverse proxy handles TLS termination at scale-out stage (no TLS code added, nothing here to preclude a reverse proxy later)
+- [x] Input validation on receiver side against malformed/oversized/malicious syslog payloads (parser must never crash on garbage input) -- covered by section 1's tolerant parser (see receiver spec + parser fuzz-style tests)
 
 ## 7. Testing / validation plan
 - [ ] Load test: sustained 300k msgs/day equivalent burst/sustained rate, confirm no message loss

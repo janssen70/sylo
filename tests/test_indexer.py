@@ -110,6 +110,29 @@ async def test_malformed_envelope_does_not_break_batch(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_fts_search_finds_message(tmp_path):
+    config = IndexerConfig(index_dir=tmp_path, flush_idle_seconds=0.05)
+    loop = asyncio.get_running_loop()
+    indexer = Indexer(config, QueueStats(), loop)
+    indexer.start()
+    indexer.enqueue(make_envelope("authentication failure for root"))
+    indexer.enqueue(make_envelope("session opened for bob"))
+    await asyncio.sleep(0.2)
+    await indexer.stop()
+
+    month_key = datetime.now(timezone.utc).strftime("%Y-%m")
+    conn = sqlite3.connect(tmp_path / f"{month_key}.sqlite3")
+    try:
+        rows = conn.execute(
+            "SELECT m.message FROM messages_fts f JOIN messages m ON m.id = f.rowid WHERE messages_fts MATCH ?",
+            ("authentication",),
+        ).fetchall()
+    finally:
+        conn.close()
+    assert rows == [("authentication failure for root",)]
+
+
+@pytest.mark.asyncio
 async def test_indexes_created(tmp_path):
     config = IndexerConfig(index_dir=tmp_path, flush_idle_seconds=0.05)
     loop = asyncio.get_running_loop()

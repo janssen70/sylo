@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..parser import parse_syslog
-from .schema import INSERT_SQL, apply_schema
+from .schema import apply_schema, insert_message
 
 logger = logging.getLogger("sylo.indexer.rebuild")
 
@@ -68,18 +68,16 @@ def _rebuild_file(conn: sqlite3.Connection, log_file: Path, source_ip: str) -> i
                 continue
             fields = parse_syslog(raw_str.encode("utf-8"))
             try:
-                conn.execute(
-                    INSERT_SQL,
-                    (
-                        timestamp_str,
-                        source_ip,
-                        fields.facility,
-                        fields.severity,
-                        fields.host,
-                        fields.tag,
-                        fields.message,
-                        int(fields.malformed),
-                    ),
+                insert_message(
+                    conn,
+                    receipt_time=timestamp_str,
+                    source_ip=source_ip,
+                    facility=fields.facility,
+                    severity=fields.severity,
+                    host=fields.host,
+                    tag=fields.tag,
+                    message=fields.message,
+                    malformed=fields.malformed,
                 )
                 inserted += 1
             except sqlite3.Error:

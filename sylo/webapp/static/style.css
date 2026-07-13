@@ -1,0 +1,83 @@
+* { box-sizing: border-box; }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  margin: 0;
+  background: #0f1115;
+  color: #e6e6e6;
+}
+a { color: #7cb7ff; }
+main { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
+
+.topnav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1.5rem;
+  background: #171a21;
+  border-bottom: 1px solid #2a2f3a;
+}
+.topnav .spacer { flex: 1; }
+.topnav .user { color: #999; }
+.inline-form { display: inline; }
+.inline-form button {
+  background: none;
+  border: none;
+  color: #7cb7ff;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}
+
+.login-box {
+  max-width: 320px;
+  margin: 4rem auto;
+  padding: 1.5rem;
+  background: #171a21;
+  border: 1px solid #2a2f3a;
+  border-radius: 8px;
+}
+.login-box label { display: block; margin-bottom: 0.75rem; }
+.login-box input { width: 100%; padding: 0.4rem; margin-top: 0.25rem; }
+
+form#search-form { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
+form#search-form input { padding: 0.4rem; background: #171a21; border: 1px solid #2a2f3a; color: inherit; border-radius: 4px; }
+
+input, button { font: inherit; }
+button {
+  padding: 0.4rem 0.9rem;
+  border-radius: 4px;
+  border: 1px solid #2a2f3a;
+  background: #23283a;
+  color: #e6e6e6;
+  cursor: pointer;
+}
+
+table.results { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+table.results th, table.results td {
+  text-align: left;
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid #23283a;
+  font-size: 0.9rem;
+}
+table.results tr.malformed { color: #ff9d9d; }
+td.ts { white-space: nowrap; font-variant-numeric: tabular-nums; color: #9aa4b2; }
+
+.error { color: #ff9d9d; }
+.success { color: #8fe19a; }
+.hint { color: #9aa4b2; font-size: 0.85rem; }
+
+#live-tail {
+  margin-top: 0.5rem;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid #2a2f3a;
+  border-radius: 4px;
+  padding: 0.5rem;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+}
+.tail-row { display: flex; gap: 0.6rem; padding: 0.15rem 0; border-bottom: 1px solid #1c2028; }
+.tail-row.malformed { color: #ff9d9d; }
+.tail-row .ts { color: #9aa4b2; white-space: nowrap; }
+.tail-row .host { color: #7cb7ff; white-space: nowrap; }
+.tail-row .tag { color: #c9a8ff; white-space: nowrap; }

@@ -1,0 +1,29 @@
+<table class="results">
+  <thead>
+    <tr><th>Time</th><th>Host</th><th>Facility</th><th>Severity</th><th>Tag</th><th>Message</th></tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr class="{{ 'malformed' if row.malformed else '' }}">
+      <td class="ts">{{ row.receipt_time }}</td>
+      <td>{{ row.host or row.source_ip }}</td>
+      <td>{{ row.facility if row.facility is not none else '' }}</td>
+      <td>{{ row.severity if row.severity is not none else '' }}</td>
+      <td>{{ row.tag or '' }}</td>
+      <td>{{ row.message }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6">No messages found.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if has_more %}
+<button
+  hx-get="/messages/results"
+  hx-include="#search-form"
+  hx-vals='{"offset": {{ offset + limit }}}'
+  hx-target="#results"
+  hx-swap="innerHTML"
+>Next page</button>
+{% endif %}

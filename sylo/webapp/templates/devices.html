@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Devices - sylo{% endblock %}
+{% block content %}
+<h1>Devices</h1>
+<table class="results">
+  <thead><tr><th>Source IP</th><th>Host</th><th>Last seen</th><th>Message count</th></tr></thead>
+  <tbody>
+    {% for d in devices %}
+    <tr>
+      <td>{{ d.source_ip }}</td>
+      <td>{{ d.host or '' }}</td>
+      <td class="ts">{{ d.last_seen }}</td>
+      <td>{{ d.message_count }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4">No devices seen yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

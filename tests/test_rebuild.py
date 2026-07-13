@@ -42,6 +42,30 @@ def test_rebuild_reconstructs_rows(tmp_path):
     ]
 
 
+def test_rebuild_populates_fts(tmp_path):
+    data_dir = tmp_path / "raw"
+    index_dir = tmp_path / "index"
+    ts = format_receipt_time(datetime(2026, 7, 13, tzinfo=timezone.utc))
+    write_log(
+        data_dir,
+        "10.0.0.5",
+        "2026-07-13",
+        [f"{ts} <34>Oct 11 22:14:15 host su: authentication failure for root"],
+    )
+
+    rebuild_indexer(data_dir, index_dir)
+
+    conn = sqlite3.connect(index_dir / "2026-07.sqlite3")
+    try:
+        rows = conn.execute(
+            "SELECT m.message FROM messages_fts f JOIN messages m ON m.id = f.rowid WHERE messages_fts MATCH ?",
+            ("authentication",),
+        ).fetchall()
+    finally:
+        conn.close()
+    assert rows == [("authentication failure for root",)]
+
+
 def test_rebuild_replaces_corrupted_db(tmp_path):
     data_dir = tmp_path / "raw"
     index_dir = tmp_path / "index"

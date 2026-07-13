@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Messages - sylo{% endblock %}
+{% block content %}
+<h1>Messages</h1>
+
+<form id="search-form" hx-get="/messages/results" hx-target="#results" hx-swap="innerHTML" hx-push-url="true">
+  <input type="text" name="host" placeholder="host" value="{{ filters.host or '' }}">
+  <input type="number" name="severity" placeholder="severity (0-7)" min="0" max="7"
+         value="{{ filters.severity if filters.severity is not none else '' }}">
+  <input type="number" name="facility" placeholder="facility (0-23)" min="0" max="23"
+         value="{{ filters.facility if filters.facility is not none else '' }}">
+  <input type="text" name="start" placeholder="start (ISO8601)" value="{{ filters.start or '' }}">
+  <input type="text" name="end" placeholder="end (ISO8601)" value="{{ filters.end or '' }}">
+  <input type="text" name="text" placeholder="free text search" value="{{ filters.text or '' }}">
+  <button type="submit">Search</button>
+</form>
+
+<div id="results">
+  {% include "_results.html" %}
+</div>
+
+<h2>Live tail</h2>
+<div id="live-tail" hx-ext="sse" sse-connect="/messages/stream" sse-swap="message" hx-swap="afterbegin"></div>
+{% endblock %}
