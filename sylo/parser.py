@@ -1,5 +1,8 @@
 """Tolerant RFC3164 / RFC5424 syslog parser.
 
+Shared between the receiver's live ingest path and the indexer's
+rebuild-from-text recovery path, so both parse a given payload identically.
+
 Must never raise on garbage input (plan line 65) -- any field that can't be
 extracted is left as None and the message is flagged malformed, but parsing
 always returns a ParsedFields with at least the raw text as `message`.

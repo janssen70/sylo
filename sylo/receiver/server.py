@@ -8,7 +8,9 @@ from datetime import datetime, timezone
 from .config import ReceiverConfig
 from .device_writer import DeviceRegistry
 from .envelope import RawMessage
-from .stats import StatsRegistry
+from ..indexer.config import IndexerConfig
+from ..indexer.core import Indexer
+from ..stats import QueueStats, StatsRegistry
 
 logger = logging.getLogger("sylo.receiver.server")
 
@@ -79,19 +81,24 @@ async def _handle_tcp_connection(
 
 
 class SyslogServer:
-    def __init__(self, config: ReceiverConfig) -> None:
+    def __init__(self, config: ReceiverConfig, indexer_config: IndexerConfig | None = None) -> None:
         self._config = config
+        self._indexer_config = indexer_config or IndexerConfig.from_env()
         self._executor = ThreadPoolExecutor(
             max_workers=config.executor_workers, thread_name_prefix="sylo-writer"
         )
         self.stats = StatsRegistry()
+        self.indexer_stats = QueueStats()
+        self._indexer: Indexer | None = None
         self._registry: DeviceRegistry | None = None
         self._udp_transport: asyncio.DatagramTransport | None = None
         self._tcp_server: asyncio.base_events.Server | None = None
 
     async def start(self) -> None:
         loop = asyncio.get_running_loop()
-        self._registry = DeviceRegistry(self._config, self._executor, self.stats, loop)
+        self._indexer = Indexer(self._indexer_config, self.indexer_stats, loop)
+        self._indexer.start()
+        self._registry = DeviceRegistry(self._config, self._executor, self.stats, loop, self._indexer)
 
         self._udp_transport, _ = await loop.create_datagram_endpoint(
             lambda: SyslogUDPProtocol(self._registry),
@@ -115,4 +122,9 @@ class SyslogServer:
             await self._tcp_server.wait_closed()
         if self._registry is not None:
             await self._registry.stop_all()
+        # Stop the indexer only after device writers have drained -- they
+        # forward parsed envelopes to it synchronously during their own
+        # drain, so by now everything they'll ever send has been enqueued.
+        if self._indexer is not None:
+            await self._indexer.stop()
         self._executor.shutdown(wait=True)

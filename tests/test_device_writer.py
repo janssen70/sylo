@@ -8,7 +8,7 @@ import pytest
 from sylo.receiver.config import ReceiverConfig
 from sylo.receiver.device_writer import DeviceRegistry
 from sylo.receiver.envelope import RawMessage
-from sylo.receiver.stats import StatsRegistry
+from sylo.stats import StatsRegistry
 
 
 def make_config(tmp_path: Path, **overrides) -> ReceiverConfig:

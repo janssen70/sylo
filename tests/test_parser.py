@@ -1,4 +1,4 @@
-from sylo.receiver.parser import parse_syslog
+from sylo.parser import parse_syslog
 
 
 def test_rfc3164_basic():

@@ -10,7 +10,8 @@ from pathlib import Path
 
 from .config import ReceiverConfig
 from .envelope import MessageEnvelope, RawMessage
-from .stats import DeviceStats, StatsRegistry
+from ..indexer.core import Indexer
+from ..stats import QueueStats, StatsRegistry
 
 logger = logging.getLogger("sylo.receiver.device_writer")
 
@@ -42,14 +43,16 @@ class DeviceWriter:
         device_key: str,
         config: ReceiverConfig,
         executor: ThreadPoolExecutor,
-        stats: DeviceStats,
+        stats: QueueStats,
         loop: asyncio.AbstractEventLoop,
+        indexer: Indexer | None = None,
     ) -> None:
         self.device_key = device_key
         self._config = config
         self._executor = executor
         self._stats = stats
         self._loop = loop
+        self._indexer = indexer
         self._queue: asyncio.Queue[RawMessage] = asyncio.Queue(maxsize=config.queue_hard_limit)
         self._last_fsync = 0.0
         self._stopping = False
@@ -112,7 +115,10 @@ class DeviceWriter:
                     await self._flush(buffer)
                     buffer = []
                 continue
-            buffer.append(MessageEnvelope.from_raw(raw_message))
+            envelope = MessageEnvelope.from_raw(raw_message)
+            buffer.append(envelope)
+            if self._indexer is not None:
+                self._indexer.enqueue(envelope)
             self._stats.queued = self._queue.qsize()
             if len(buffer) >= self._config.flush_max_messages:
                 await self._flush(buffer)
@@ -121,7 +127,10 @@ class DeviceWriter:
         # Draining on shutdown: no more producers, so pull whatever remains
         # without waiting on the idle timer, then flush with a forced fsync.
         while not self._queue.empty():
-            buffer.append(MessageEnvelope.from_raw(self._queue.get_nowait()))
+            envelope = MessageEnvelope.from_raw(self._queue.get_nowait())
+            buffer.append(envelope)
+            if self._indexer is not None:
+                self._indexer.enqueue(envelope)
         if buffer:
             await self._flush(buffer, force_fsync=True)
 
@@ -135,11 +144,13 @@ class DeviceRegistry:
         executor: ThreadPoolExecutor,
         stats_registry: StatsRegistry,
         loop: asyncio.AbstractEventLoop,
+        indexer: Indexer | None = None,
     ) -> None:
         self._config = config
         self._executor = executor
         self._stats_registry = stats_registry
         self._loop = loop
+        self._indexer = indexer
         self._writers: dict[str, DeviceWriter] = {}
 
     def get_or_create(self, device_key: str) -> DeviceWriter:
@@ -151,6 +162,7 @@ class DeviceRegistry:
                 self._executor,
                 self._stats_registry.for_device(device_key),
                 self._loop,
+                self._indexer,
             )
             writer.start()
             self._writers[device_key] = writer

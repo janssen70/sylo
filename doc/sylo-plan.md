@@ -25,16 +25,16 @@
 - [ ] Crash/restart behavior: safe resume, no data loss/corruption of in-progress file
 
 ## 2. Storage / indexer spec
-- [ ] Source-of-truth: rotating plain text files (open format, always readable even if index breaks)
-- [ ] Index: SQLite (WAL mode), schema with indexes on (timestamp, host, severity, facility)
-- [ ] Partitioning strategy: one DB/table-set per month to bound size and simplify retention drops
+- [x] Source-of-truth: rotating plain text files (open format, always readable even if index breaks)
+- [x] Index: SQLite (WAL mode), schema with indexes on (timestamp), (host, timestamp), (severity, timestamp), (facility, timestamp) -- composite indexes chosen over single-column ones since section 3's filters always pair a dimension with a time range/order
+- [x] Partitioning strategy: one DB/table-set per month to bound size and simplify retention drops
 - [x] Indexer placement: **embedded in receiver process** (own asyncio task/queue, not the UI process). Chosen over separate process — write path is expected to stabilize quickly and change rarely, while search/lookup will see considerable rework, so isolating "likely to change" (indexer/UI) from "rarely changes" (receiver) matters more here than a hard process boundary.
   - Safety nets to preserve ingest isolation despite sharing a process:
     - Each message's parse+insert wrapped in its own try/except — malformed input must never raise into the ingest loop
     - Indexer has its own queue + task, same pattern as per-device writers — slow SQLite operations delay indexing only, never ingest
     - Batched commits (N rows or T seconds) to bound lock/fsync overhead per operation
     - Lag/backlog counter for the indexer (mirrors the write-side overload counter) exposed via health endpoint
-- [ ] Recovery: indexer can rebuild index from text files if SQLite is lost/corrupted
+- [x] Recovery: indexer can rebuild index from text files if SQLite is lost/corrupted (`python -m sylo.indexer.rebuild --data-dir ... --index-dir ...`, optionally scoped to specific `--month`s; deletes and recreates the targeted month DB(s) before reinserting)
 
 ## 3. HTTP / UI spec
 - [ ] Server: FastAPI + uvicorn (Python), single process, separate from receiver

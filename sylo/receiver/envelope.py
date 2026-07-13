@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
-from .parser import ParsedFields, parse_syslog
+from ..parser import ParsedFields, parse_syslog
+from ..timeutil import format_receipt_time
 
 
 @dataclass(slots=True)
@@ -79,4 +80,4 @@ class MessageEnvelope:
         per-message invariant holds even for malformed input.
         """
         raw_text = self.raw.decode("utf-8", errors="replace").replace("\r", " ").replace("\n", " ")
-        return f"{self.receipt_time.isoformat()} {raw_text}"
+        return f"{format_receipt_time(self.receipt_time)} {raw_text}"
