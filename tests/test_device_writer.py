@@ -1,6 +1,6 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -127,3 +127,33 @@ async def test_ipv6_device_key_sanitized_for_filesystem(tmp_path):
     executor.shutdown(wait=True)
 
     assert (tmp_path / "__1").exists()
+
+
+@pytest.mark.asyncio
+async def test_restart_after_crash_does_not_merge_onto_torn_line(tmp_path):
+    """Simulates a crash that left the previous process's last write torn
+    (no trailing newline) -- restart must not silently glue the next
+    message onto that fragment (plan line 25)."""
+    device_dir = tmp_path / "10.0.0.9"
+    device_dir.mkdir()
+    today = date.today().isoformat()
+    log_path = device_dir / f"{today}.log"
+    log_path.write_text("2026-07-14T10:00:00.000Z <34>Oct 11 22:14:15 host su: torn messa")
+
+    config = make_config(tmp_path)
+    executor = ThreadPoolExecutor(max_workers=2)
+    loop = asyncio.get_running_loop()
+    registry = DeviceRegistry(config, executor, StatsRegistry(), loop)
+
+    writer = registry.get_or_create("10.0.0.9")
+    writer.enqueue(raw_message(b"<34>Oct 11 22:14:15 host su: fresh after restart", ip="10.0.0.9"))
+
+    await asyncio.sleep(0.3)
+    await registry.stop_all()
+    executor.shutdown(wait=True)
+
+    lines = log_path.read_text().splitlines()
+    assert len(lines) == 2
+    assert lines[0].endswith("torn messa")
+    assert "fresh after restart" in lines[1]
+    assert "fresh after restart" not in lines[0]

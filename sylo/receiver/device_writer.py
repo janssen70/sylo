@@ -21,8 +21,32 @@ def _sanitize_device_key(ip: str) -> str:
     return ip.replace(":", "_")
 
 
-def _write_sync(path: Path, lines: list[str], fsync: bool) -> None:
+def _ensure_clean_tail(path: Path) -> None:
+    """Crash/restart safety (plan line 25): a crash between write() and the
+    next fsync can leave the file's last line torn (no trailing newline) --
+    the write() call itself is all-or-nothing, but the underlying dirty page
+    may only be partially flushed to disk by the time of a hard crash.
+    Appending straight onto a torn line would silently merge a brand-new,
+    otherwise-intact message onto the tail of that old garbage, corrupting
+    it too. Called once per path per process lifetime (see
+    DeviceWriter._sanitized_paths) before the first write to it, so it only
+    ever touches whatever a *previous* process run left behind."""
+    try:
+        with open(path, "rb+") as f:
+            f.seek(0, os.SEEK_END)
+            if f.tell() == 0:
+                return
+            f.seek(-1, os.SEEK_END)
+            if f.read(1) != b"\n":
+                f.write(b"\n")
+    except FileNotFoundError:
+        pass
+
+
+def _write_sync(path: Path, lines: list[str], fsync: bool, sanitize_tail: bool) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    if sanitize_tail:
+        _ensure_clean_tail(path)
     with open(path, "a", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
         f.flush()
@@ -57,6 +81,10 @@ class DeviceWriter:
         self._last_fsync = 0.0
         self._stopping = False
         self._task: asyncio.Task | None = None
+        # Tracks which day-files this process has already tail-sanitized
+        # (see _ensure_clean_tail) so a restart re-checks each file exactly
+        # once, on first write, rather than on every flush.
+        self._sanitized_paths: set[Path] = set()
 
     def start(self) -> None:
         self._task = self._loop.create_task(self._run(), name=f"device-writer-{self.device_key}")
@@ -94,11 +122,15 @@ class DeviceWriter:
         )
         for day, lines in by_date.items():
             path = self._path_for(day)
+            sanitize_tail = path not in self._sanitized_paths
             try:
-                await self._loop.run_in_executor(self._executor, _write_sync, path, lines, do_fsync)
+                await self._loop.run_in_executor(
+                    self._executor, _write_sync, path, lines, do_fsync, sanitize_tail
+                )
             except OSError:
                 logger.exception("device %s failed writing %s", self.device_key, path)
                 continue
+            self._sanitized_paths.add(path)
             self._stats.written += len(lines)
         if do_fsync:
             self._last_fsync = time.monotonic()

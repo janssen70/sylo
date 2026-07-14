@@ -9,10 +9,15 @@ dependencies = [
     "jinja2>=3.1",
     "bcrypt>=4.2",
     "python-multipart>=0.0.12",
+    "pywin32>=306; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "httpx>=0.27"]
+# Windows-only build tooling for packaging/pyinstaller/*.spec (section 5) --
+# pyinstaller doesn't cross-compile, so this group is only useful when
+# installed on the Windows machine actually producing the .exe files.
+build = ["pyinstaller>=6.0; sys_platform == 'win32'"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

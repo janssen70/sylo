@@ -10,12 +10,17 @@ from .server import SyslogServer
 logger = logging.getLogger('sylo.receiver')
 
 
-async def run(config: ReceiverConfig | None = None) -> None:
+async def run(config: ReceiverConfig | None = None, stop_event: asyncio.Event | None = None) -> None:
+    """stop_event is caller-supplied by the Windows service wrapper
+    (winservice.py), whose SvcStop runs on a thread handed to it by the
+    Service Control Manager -- separate from the thread that owns this
+    event loop -- and so must reach into the loop via call_soon_threadsafe
+    rather than setting an event created (and thus thread-affined) here."""
     config = config or ReceiverConfig.from_env()
     server = SyslogServer(config)
     await server.start()
 
-    stop_event = asyncio.Event()
+    stop_event = stop_event or asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:

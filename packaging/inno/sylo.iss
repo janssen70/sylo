@@ -1,0 +1,198 @@
+; Sylo Windows installer (plan section 5).
+;
+; Authored on Linux -- there is no Windows machine or Wine/Inno Setup
+; install in this dev environment, so this script has NOT been compiled or
+; run. Build it with Inno Setup's ISCC on a Windows box (or under Wine)
+; after producing the three exes via the .spec files in
+; packaging/pyinstaller/:
+;
+;   pyinstaller packaging/pyinstaller/receiver.spec  --distpath dist --workpath build
+;   pyinstaller packaging/pyinstaller/webapp.spec    --distpath dist --workpath build
+;   pyinstaller packaging/pyinstaller/retention.spec --distpath dist --workpath build
+;   iscc packaging/inno/sylo.iss
+;
+; Known gap, not solved here: if the admin password field below is left
+; blank, sylo-webapp auto-generates one and logs it once via the `logging`
+; module -- but a Windows service has no console, so today that log line
+; goes nowhere visible. Until the webapp writes startup logs to a file or
+; the Windows Event Log, installers should either type an explicit password
+; here or be prepared to set SYLO_ADMIN_PASSWORD by hand and restart the
+; service once to see the generated one.
+
+#define MyAppName "Sylo"
+#define MyAppVersion "0.1.0"
+#define MyAppPublisher "Sylo"
+; Fixed once and never changed across releases -- Inno uses this GUID (not
+; the app name) to recognize "this is an upgrade of the same product."
+#define MyAppId "{{0A55DFC6-FFEB-4AC1-8F72-626058010BB0}"
+
+[Setup]
+AppId={#MyAppId}
+AppName={#MyAppName}
+AppVersion={#MyAppVersion}
+AppPublisher={#MyAppPublisher}
+DefaultDirName={autopf}\Sylo
+DefaultGroupName=Sylo
+DisableProgramGroupPage=yes
+; Installing/removing Windows services and writing to ProgramData both need
+; admin rights; also the receiver binds privileged... no, actually UDP/TCP
+; 514 needs no special Windows privilege (unlike Linux's CAP_NET_BIND_SERVICE
+; requirement, see plan section 8) -- admin is needed here purely for the
+; service-control and ProgramData-write operations below.
+PrivilegesRequired=admin
+ArchitecturesInstallIn64BitMode=x64compatible
+OutputDir=..\..\dist\installer
+OutputBaseFilename=sylo-setup
+Compression=lzma
+SolidCompression=yes
+UninstallDisplayIcon={app}\sylo-webapp.exe
+
+[Files]
+; Each exe is a self-contained PyInstaller onefile build -- no separate
+; Python/runtime install needed on the target machine (plan line 61).
+Source: "..\..\dist\sylo-receiver.exe";  DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\dist\sylo-webapp.exe";    DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\dist\sylo-retention.exe"; DestDir: "{app}"; Flags: ignoreversion
+
+[Dirs]
+; Pre-created for visibility/permissions; the processes themselves also
+; create these on demand (mkdir(parents=True, exist_ok=True) throughout),
+; so this isn't load-bearing, just tidier for anyone poking around after
+; install and before first service start.
+Name: "{commonappdata}\Sylo\data\raw"
+Name: "{commonappdata}\Sylo\data\index"
+
+[UninstallRun]
+; Runs (in this order) before Inno deletes the app's files -- stop, then
+; unregister, each service. skipifdoesntexist covers re-running an
+; uninstall after a partial/failed install where a given service was never
+; registered.
+Filename: "{app}\sylo-receiver.exe";  Parameters: "stop";   Flags: runhidden waituntilterminated skipifdoesntexist
+Filename: "{app}\sylo-receiver.exe";  Parameters: "remove"; Flags: runhidden waituntilterminated skipifdoesntexist
+Filename: "{app}\sylo-webapp.exe";    Parameters: "stop";   Flags: runhidden waituntilterminated skipifdoesntexist
+Filename: "{app}\sylo-webapp.exe";    Parameters: "remove"; Flags: runhidden waituntilterminated skipifdoesntexist
+Filename: "{app}\sylo-retention.exe"; Parameters: "stop";   Flags: runhidden waituntilterminated skipifdoesntexist
+Filename: "{app}\sylo-retention.exe"; Parameters: "remove"; Flags: runhidden waituntilterminated skipifdoesntexist
+
+[Code]
+var
+  AdminPasswordPage: TInputQueryWizardPage;
+
+function DataRawDir(): String;
+begin
+  Result := ExpandConstant('{commonappdata}') + '\Sylo\data\raw';
+end;
+
+function DataIndexDir(): String;
+begin
+  Result := ExpandConstant('{commonappdata}') + '\Sylo\data\index';
+end;
+
+function AppDbPath(): String;
+begin
+  Result := ExpandConstant('{commonappdata}') + '\Sylo\data\app.sqlite3';
+end;
+
+procedure InitializeWizard();
+begin
+  AdminPasswordPage := CreateInputQueryPage(
+    wpSelectDir,
+    'Admin Account',
+    'Choose a password for the default "admin" account',
+    'Leave blank to auto-generate one instead (see the note at the top of ' +
+    'this script for how to retrieve a generated password).'
+  );
+  AdminPasswordPage.Add('Password:', True);
+  AdminPasswordPage.Add('Confirm password:', True);
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+  if CurPageID = AdminPasswordPage.ID then
+  begin
+    if AdminPasswordPage.Values[0] <> AdminPasswordPage.Values[1] then
+    begin
+      MsgBox('Passwords do not match.', mbError, MB_OK);
+      Result := False;
+    end;
+  end;
+end;
+
+// Registers a service (via that exe's own pywin32 install command), writes
+// its per-service Environment values directly into the registry -- the
+// documented way to give a Windows service env vars without polluting the
+// system-wide environment or requiring a reboot for them to take effect --
+// then starts it. Writing the registry key here (rather than declaratively
+// in an [Registry] section, which runs before [Run]/before the service key
+// even exists) keeps install-env-start in one guaranteed order.
+procedure InstallService(ExeName, ServiceName: String; EnvLines: TArrayOfString);
+var
+  ResultCode: Integer;
+  ExePath: String;
+begin
+  ExePath := ExpandConstant('{app}') + '\' + ExeName;
+
+  if not Exec(ExePath, 'install --startup=auto', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+    MsgBox('Failed to launch installer for ' + ServiceName + '.', mbError, MB_OK)
+  else if ResultCode <> 0 then
+    MsgBox(ServiceName + ' service registration exited with code ' + IntToStr(ResultCode) + '.', mbError, MB_OK);
+
+  // The service key already exists at this point (created by the install
+  // step above); RegWriteMultiStringValue would create it if not, too.
+  RegWriteMultiStringValue(HKLM, 'SYSTEM\CurrentControlSet\Services\' + ServiceName, 'Environment', EnvLines);
+
+  if not Exec(ExePath, 'start', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+    MsgBox('Failed to launch ' + ServiceName + '.', mbError, MB_OK)
+  else if ResultCode <> 0 then
+    MsgBox(ServiceName + ' service start exited with code ' + IntToStr(ResultCode) + '.', mbError, MB_OK);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ReceiverEnv, WebappEnv, RetentionEnv: TArrayOfString;
+  AdminPassword: String;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    AdminPassword := AdminPasswordPage.Values[0];
+
+    SetArrayLength(ReceiverEnv, 2);
+    ReceiverEnv[0] := 'SYLO_DATA_DIR=' + DataRawDir();
+    ReceiverEnv[1] := 'SYLO_INDEX_DIR=' + DataIndexDir();
+    InstallService('sylo-receiver.exe', 'SyloReceiver', ReceiverEnv);
+
+    if AdminPassword <> '' then
+    begin
+      SetArrayLength(WebappEnv, 3);
+      WebappEnv[2] := 'SYLO_ADMIN_PASSWORD=' + AdminPassword;
+    end
+    else
+      SetArrayLength(WebappEnv, 2);
+    WebappEnv[0] := 'SYLO_APP_DB=' + AppDbPath();
+    WebappEnv[1] := 'SYLO_INDEX_DIR=' + DataIndexDir();
+    InstallService('sylo-webapp.exe', 'SyloWebapp', WebappEnv);
+
+    SetArrayLength(RetentionEnv, 3);
+    RetentionEnv[0] := 'SYLO_DATA_DIR=' + DataRawDir();
+    RetentionEnv[1] := 'SYLO_INDEX_DIR=' + DataIndexDir();
+    RetentionEnv[2] := 'SYLO_APP_DB=' + AppDbPath();
+    InstallService('sylo-retention.exe', 'SyloRetention', RetentionEnv);
+  end;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  // Data retained on uninstall unless the user opts out (plan line 60) --
+  // IDYES ("keep") is the MsgBox's default button, so a hurried Enter-key
+  // uninstall keeps data rather than deleting it.
+  if CurUninstallStep = usPostUninstall then
+  begin
+    if MsgBox(
+      'Keep the Sylo data directory (' + ExpandConstant('{commonappdata}') + '\Sylo) and its contents?' + #13#10 +
+      'Choose No to permanently delete all recorded messages and settings.',
+      mbConfirmation, MB_YESNO
+    ) = IDNO then
+      DelTree(ExpandConstant('{commonappdata}') + '\Sylo', True, True, True);
+  end;
+end;
