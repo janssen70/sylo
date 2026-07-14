@@ -66,13 +66,18 @@ Name: "{commonappdata}\Sylo\data\index"
 ; Runs (in this order) before Inno deletes the app's files -- stop, then
 ; unregister, each service. skipifdoesntexist covers re-running an
 ; uninstall after a partial/failed install where a given service was never
-; registered.
-Filename: "{app}\sylo-receiver.exe";  Parameters: "stop";   Flags: runhidden waituntilterminated skipifdoesntexist
-Filename: "{app}\sylo-receiver.exe";  Parameters: "remove"; Flags: runhidden waituntilterminated skipifdoesntexist
-Filename: "{app}\sylo-webapp.exe";    Parameters: "stop";   Flags: runhidden waituntilterminated skipifdoesntexist
-Filename: "{app}\sylo-webapp.exe";    Parameters: "remove"; Flags: runhidden waituntilterminated skipifdoesntexist
-Filename: "{app}\sylo-retention.exe"; Parameters: "stop";   Flags: runhidden waituntilterminated skipifdoesntexist
-Filename: "{app}\sylo-retention.exe"; Parameters: "remove"; Flags: runhidden waituntilterminated skipifdoesntexist
+; registered. RunOnceId matters beyond silencing the compiler warning: since
+; this installer upgrades in place (fixed AppId, see MyAppId above), these
+; [UninstallRun] entries also fire when re-running setup.exe over an
+; existing install, not only from unins000.exe -- without RunOnceId, Inno
+; has no record of "already ran for this exact entry" and could re-run a
+; stop/remove pair on every maintenance/repeat install of the same version.
+Filename: "{app}\sylo-receiver.exe";  Parameters: "stop";   Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "StopReceiver"
+Filename: "{app}\sylo-receiver.exe";  Parameters: "remove"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "RemoveReceiver"
+Filename: "{app}\sylo-webapp.exe";    Parameters: "stop";   Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "StopWebapp"
+Filename: "{app}\sylo-webapp.exe";    Parameters: "remove"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "RemoveWebapp"
+Filename: "{app}\sylo-retention.exe"; Parameters: "stop";   Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "StopRetention"
+Filename: "{app}\sylo-retention.exe"; Parameters: "remove"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "RemoveRetention"
 
 [Code]
 var
@@ -126,21 +131,48 @@ end;
 // then starts it. Writing the registry key here (rather than declaratively
 // in an [Registry] section, which runs before [Run]/before the service key
 // even exists) keeps install-env-start in one guaranteed order.
-procedure InstallService(ExeName, ServiceName: String; EnvLines: TArrayOfString);
+// Two earlier attempts here (TArrayOfString, then array of String with a
+// local-var copy) both hit "Type mismatch" on a real ISCC build -- turns out
+// RegWriteMultiStringValue does not take an array at all, despite what its
+// doc page's parameter name ("Data") suggests at a glance; its real
+// signature is `Data: String`, a single string with each value joined by an
+// embedded null character (#0), e.g. 'A' + #0 + 'B' + #0 + 'C'
+// (confirmed against jrsoftware.org's own RegWriteMultiStringValue example).
+// EnvLines stays a plain "array of String" open-array parameter -- fine for
+// the caller side (CurStepChanged passes real dynamic arrays into it, which
+// open-array parameters accept) -- and gets joined into EnvData below before
+// the registry call, instead of being forwarded as an array anywhere.
+procedure InstallService(ExeName, ServiceName: String; EnvLines: array of String);
 var
-  ResultCode: Integer;
-  ExePath: String;
+  ResultCode, i: Integer;
+  ExePath, EnvData: String;
 begin
   ExePath := ExpandConstant('{app}') + '\' + ExeName;
 
-  if not Exec(ExePath, 'install --startup=auto', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+  // Option before command, not after: pywin32's HandleCommandLine parses
+  // argv with plain getopt.getopt (not gnu_getopt), which stops recognizing
+  // "--startup=..." as an option once it hits the first non-option token --
+  // so "install --startup=auto" leaves --startup=auto as a stray leftover
+  // positional argument to the install command instead of being consumed as
+  // the startup-type option (this was the actual cause of the "exited with
+  // code 1" seen from inside the installer, even though a plain manual
+  // `sylo-webapp.exe install` succeeds on its own).
+  if not Exec(ExePath, '--startup=auto install', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
     MsgBox('Failed to launch installer for ' + ServiceName + '.', mbError, MB_OK)
   else if ResultCode <> 0 then
     MsgBox(ServiceName + ' service registration exited with code ' + IntToStr(ResultCode) + '.', mbError, MB_OK);
 
+  EnvData := '';
+  for i := 0 to GetArrayLength(EnvLines) - 1 do
+  begin
+    if i > 0 then
+      EnvData := EnvData + #0;
+    EnvData := EnvData + EnvLines[i];
+  end;
+
   // The service key already exists at this point (created by the install
   // step above); RegWriteMultiStringValue would create it if not, too.
-  RegWriteMultiStringValue(HKLM, 'SYSTEM\CurrentControlSet\Services\' + ServiceName, 'Environment', EnvLines);
+  RegWriteMultiStringValue(HKLM, 'SYSTEM\CurrentControlSet\Services\' + ServiceName, 'Environment', EnvData);
 
   if not Exec(ExePath, 'start', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
     MsgBox('Failed to launch ' + ServiceName + '.', mbError, MB_OK)
@@ -150,7 +182,7 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 var
-  ReceiverEnv, WebappEnv, RetentionEnv: TArrayOfString;
+  ReceiverEnv, WebappEnv, RetentionEnv: array of String;
   AdminPassword: String;
 begin
   if CurStep = ssPostInstall then
