@@ -1,0 +1,177 @@
+# Sylo
+
+Sylo is a self-contained syslog recorder: it listens for syslog messages
+(UDP/TCP 514, RFC3164 and RFC5424). It records them to per-device
+text files and indexes them into SQLite for fast search. A local web UI
+lets you browse/search history, tail messages live, manage retention, and
+see which devices are reporting in.
+
+
+It is intended for monitoring edge devices in small-scale deployments
+where a full-fledged and IT-heavy syslog solution would introduce more problems
+than it solves.
+
+It's made up of three independent processes, each of which can be started,
+stopped, and restarted without affecting the others:
+
+- **Receiver** (`sylo.receiver`) — listens on UDP/TCP 514, writes raw
+  messages to daily per-device text files, and feeds an embedded indexer
+  that maintains a monthly SQLite index (with full-text search).
+- **Webapp** (`sylo.webapp`) — FastAPI + htmx UI on `127.0.0.1:8080`:
+  message browser/search, live tail (SSE), retention settings, device list.
+  Only ever reads the SQLite index, never the raw text files.
+- **Retention manager** (`sylo.retention`) — a daily background job that
+  drops whole monthly partitions (index DB + matching raw files) once
+  they're older than the configured retention window.
+
+## Building
+
+### Windows
+
+This produces three self-contained `.exe` files (no separate Python install
+needed on the target machine) and, eventually, a single installer built
+with Inno Setup.
+
+From the repository root, in PowerShell:
+
+```powershell
+py -3.11 -m venv .venv
+.venv\Scripts\Activate.ps1
+
+python -m pip install --upgrade pip
+pip install -e ".[build]"
+
+pyinstaller packaging\pyinstaller\receiver.spec  --distpath dist --workpath build
+pyinstaller packaging\pyinstaller\webapp.spec    --distpath dist --workpath build
+pyinstaller packaging\pyinstaller\retention.spec --distpath dist --workpath build
+```
+
+Verify each exe at least starts up and responds to pywin32's own CLI:
+
+```powershell
+.\dist\sylo-receiver.exe --help
+.\dist\sylo-webapp.exe --help
+.\dist\sylo-retention.exe --help
+```
+
+(If PowerShell blocks the venv activation script with an execution-policy
+error, run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`
+first, or activate via `.venv\Scripts\activate.bat` in `cmd.exe` instead.)
+
+The next step -- compiling `packaging\inno\sylo.iss` with Inno Setup's
+`ISCC.exe` into a single `sylo-setup.exe` installer:
+
+```powershell
+iscc packaging\inno\sylo.iss
+```
+
+Build/run-verified on a real Windows machine: compiles clean and a full
+install registers, configures, and starts all three services. Upgrade
+(re-running the installer over an existing install) and the uninstall
+keep/delete-data prompt are still untested -- see `doc/sylo-plan.md` section 5.
+
+### Linux
+
+There's no installer/bundling story for Linux yet (see `doc/sylo-plan.md`
+section 8) -- this just sets up a normal development/runtime environment
+from source:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+
+pip install --upgrade pip
+pip install -e ".[dev]"   # add pytest etc.; drop the extra for a runtime-only install
+
+pytest -q                 # optional: confirm the test suite passes
+```
+
+## Setup
+
+Whichever platform you're on, all three processes are configured entirely
+through environment variables (no config file). The ones that matter for a
+first run:
+
+| Variable              | Used by                       | Default              | Purpose                                    |
+|------------------------|-------------------------------|-----------------------|---------------------------------------------|
+| `SYLO_DATA_DIR`        | receiver, retention            | `./data/raw`          | Root of per-device raw text files          |
+| `SYLO_INDEX_DIR`       | receiver, webapp, retention    | `./data/index`        | Monthly SQLite index files                 |
+| `SYLO_APP_DB`          | webapp, retention               | `./data/app.sqlite3`  | Control-plane DB (users/sessions/settings) |
+| `SYLO_ADMIN_PASSWORD`  | webapp                         | *(random, first run)* | Password for the default `admin` account   |
+
+**Set `SYLO_DATA_DIR`, `SYLO_INDEX_DIR`, and `SYLO_APP_DB` to the same
+values for all three processes** so they agree on where the data lives —
+otherwise, e.g., the webapp won't see what the receiver wrote. The relative
+defaults (`./data/...`) only make sense if all three are started from the
+same working directory; for anything long-running, point them at an
+absolute path instead.
+
+Each process has a number of other tunable knobs (queue sizes, flush
+intervals, page sizes, rate limits, etc.) — see `sylo/receiver/config.py`,
+`sylo/indexer/config.py`, `sylo/webapp/config.py`, and
+`sylo/retention/config.py` for the full list; the defaults are reasonable
+for the scale this was designed for and shouldn't need changing.
+
+### Admin account
+
+On its first run, the webapp creates a single `admin` account. Set
+`SYLO_ADMIN_PASSWORD` before that first run to choose the password
+yourself; if you leave it unset, one is generated and logged once via
+Python's `logging` module. **On Windows, prefer setting it explicitly** —
+a Windows service has no attached console, so a generated password's log
+line currently has nowhere visible to go (a known, documented gap; see the
+note at the top of `packaging/inno/sylo.iss`). The Inno Setup installer
+also has its own wizard page for this, feeding it into the webapp service's
+environment directly.
+
+### Running it
+
+**Windows, via the installer** (once `sylo-setup.exe` exists — see above):
+running it installs all three services (`SyloReceiver`, `SyloWebapp`,
+`SyloRetention`), wires up the environment variables above for you, starts
+them, and leaves them registered for auto-start on boot. Nothing further
+to do — open `http://127.0.0.1:8080` and log in as `admin`.
+
+**Windows, running the exes directly** (without the installer, e.g. to
+test a build): each exe is dual-mode, per pywin32's `HandleCommandLine` —
+`--startup=auto install`, `start`, `stop`, `remove` manage it as a service
+(the `--startup` option must precede the command, not follow it -- pywin32
+parses argv with plain `getopt`, which stops recognizing options after the
+first positional argument),
+but with no arguments it expects to be launched *by* the Service Control
+Manager, not run directly from a console. To just run something in the
+foreground for testing, use the plain Python entry points instead (from an
+activated venv, with the env vars above set):
+
+```powershell
+python -m sylo.receiver.main
+python -m sylo.webapp.main
+python -m sylo.retention.main
+```
+
+**Linux**: same plain Python entry points, one per terminal (or backgrounded
+with `nohup ... &`, or under your own supervisor of choice — there's no
+systemd unit shipped yet):
+
+```bash
+export SYLO_DATA_DIR=/path/to/data/raw
+export SYLO_INDEX_DIR=/path/to/data/index
+export SYLO_APP_DB=/path/to/data/app.sqlite3
+export SYLO_ADMIN_PASSWORD=choose-a-password   # first run only
+
+python -m sylo.receiver.main &
+python -m sylo.webapp.main &
+python -m sylo.retention.main &
+```
+
+One Linux-specific catch: UDP/TCP port 514 is privileged. Either run the
+receiver as root, or grant the capability to the venv's Python once instead
+of running everything as root:
+
+```bash
+sudo setcap 'cap_net_bind_service=+ep' "$(readlink -f .venv/bin/python3)"
+```
+
+Then, on any platform, visit `http://127.0.0.1:8080` and log in as `admin`
+with whichever password you set (or the one that was logged, if you didn't
+set one).
