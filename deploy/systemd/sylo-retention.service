@@ -1,0 +1,26 @@
+[Unit]
+Description=Sylo retention manager
+After=network.target
+
+[Service]
+# Long-lived process with its own internal daily loop (sylo.retention.main's
+# run_interval_seconds), not a .timer + `--once` oneshot -- chosen to mirror
+# the Windows service model exactly (three independently start/stoppable
+# long-running services on both platforms), see doc/sylo-plan.md section 8
+# open decision 6. `--once` remains available as a manual/testing invocation
+# (systemctl start --no-block won't use it; run the module directly for that).
+Type=simple
+User=sylo
+Group=sylo
+EnvironmentFile=/etc/sylo/sylo.env
+ExecStart=/opt/sylo/venv/bin/python -m sylo.retention.main
+Restart=on-failure
+RestartSec=2
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/sylo/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

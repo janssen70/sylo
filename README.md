@@ -72,9 +72,7 @@ keep/delete-data prompt are still untested -- see `doc/sylo-plan.md` section 5.
 
 ### Linux
 
-There's no installer/bundling story for Linux yet (see `doc/sylo-plan.md`
-section 8) -- this just sets up a normal development/runtime environment
-from source:
+**Development**, or just trying it out without installing anything system-wide:
 
 ```bash
 python3 -m venv .venv
@@ -85,6 +83,28 @@ pip install -e ".[dev]"   # add pytest etc.; drop the extra for a runtime-only i
 
 pytest -q                 # optional: confirm the test suite passes
 ```
+
+**A real install**, running as systemd services (see `doc/sylo-plan.md`
+section 8): `sudo make install`. This is not a `.deb`/`.rpm`/Docker image --
+it builds a venv under `/opt/sylo` from this source tree (via `pip install
+.`, no `-e`, so the clone directory is disposable afterward), creates a
+system `sylo` user, and installs `sylo-receiver.service`,
+`sylo-webapp.service`, and `sylo-retention.service` under
+`/etc/systemd/system/`. Data lives under `/var/lib/sylo/data`, config in
+`/etc/sylo/sylo.env` (copied from `deploy/systemd/sylo.env.example` on first
+install only -- re-running `make install` to upgrade never overwrites it).
+See `Makefile` for exactly what it does before running it with root.
+
+```bash
+sudo make install
+$EDITOR /etc/sylo/sylo.env          # set SYLO_ADMIN_PASSWORD before first start
+sudo systemctl enable --now sylo-receiver sylo-webapp sylo-retention
+```
+
+`sudo make uninstall` stops the services and removes `/opt/sylo`, but keeps
+`/var/lib/sylo/data` and `/etc/sylo` (mirrors the Windows installer's
+keep-data-by-default uninstall). `sudo make purge` removes those too, along
+with the `sylo` user, for a fully clean removal.
 
 ## Setup
 
@@ -149,9 +169,14 @@ python -m sylo.webapp.main
 python -m sylo.retention.main
 ```
 
-**Linux**: same plain Python entry points, one per terminal (or backgrounded
-with `nohup ... &`, or under your own supervisor of choice — there's no
-systemd unit shipped yet):
+**Linux, real install**: `sudo systemctl enable --now sylo-receiver sylo-webapp
+sylo-retention` after `sudo make install` (see above) — the unit files
+already grant the receiver `CAP_NET_BIND_SERVICE` so it can bind port 514
+without running as root, and handle start/stop/restart/auto-start-on-boot.
+
+**Linux, ad hoc from a dev venv** (no systemd, e.g. just trying it out): same
+plain Python entry points, one per terminal (or backgrounded with
+`nohup ... &`, or under your own supervisor of choice):
 
 ```bash
 export SYLO_DATA_DIR=/path/to/data/raw
@@ -171,6 +196,11 @@ of running everything as root:
 ```bash
 sudo setcap 'cap_net_bind_service=+ep' "$(readlink -f .venv/bin/python3)"
 ```
+
+(This grants the capability to the interpreter binary itself, so anything
+run by that same venv's Python gets it too — fine for a throwaway dev venv,
+which is why the real install above uses per-unit `AmbientCapabilities`
+instead, scoped to just the receiver service.)
 
 Then, on any platform, visit `http://127.0.0.1:8080` and log in as `admin`
 with whichever password you set (or the one that was logged, if you didn't

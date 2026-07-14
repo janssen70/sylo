@@ -1,0 +1,20 @@
+[Unit]
+Description=Sylo web UI
+After=network.target
+
+[Service]
+Type=simple
+User=sylo
+Group=sylo
+EnvironmentFile=/etc/sylo/sylo.env
+ExecStart=/opt/sylo/venv/bin/python -m sylo.webapp.main
+Restart=on-failure
+RestartSec=2
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/sylo/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
