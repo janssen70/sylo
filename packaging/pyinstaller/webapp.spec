@@ -11,14 +11,26 @@
 # runtime -- PyInstaller's onefile extraction preserves __file__'s location
 # relative to the bundle root, so no code changes were needed in app.py to
 # find them when frozen.
+#
+# Source paths are built from SPECPATH (this spec file's own absolute
+# directory, injected by PyInstaller) rather than left relative, so the
+# build works regardless of the caller's current directory.
+# entry_webapp.py is the Analysis script rather than winservice.py directly
+# for the same reason as entry_receiver.py (see its docstring): relative
+# imports need a real parent package, which the frozen entry script itself
+# doesn't have.
+
+import os
+
+_root = os.path.abspath(os.path.join(SPECPATH, "..", ".."))
 
 a = Analysis(
-    ["../../sylo/webapp/winservice.py"],
-    pathex=[],
+    [os.path.join(SPECPATH, "entry_webapp.py")],
+    pathex=[_root],
     binaries=[],
     datas=[
-        ("../../sylo/webapp/templates", "sylo/webapp/templates"),
-        ("../../sylo/webapp/static", "sylo/webapp/static"),
+        (os.path.join(_root, "sylo", "webapp", "templates"), os.path.join("sylo", "webapp", "templates")),
+        (os.path.join(_root, "sylo", "webapp", "static"), os.path.join("sylo", "webapp", "static")),
     ],
     hiddenimports=["win32timezone"],
     hookspath=[],
