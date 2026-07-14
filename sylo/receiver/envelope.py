@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 
 from ..parser import ParsedFields, parse_syslog
 from ..timeutil import format_receipt_time
@@ -30,10 +29,10 @@ class MessageEnvelope:
     source_port: int
     transport: str  # "udp" or "tcp"
     raw: bytes
-    facility: Optional[int]
-    severity: Optional[int]
-    host: Optional[str]
-    tag: Optional[str]
+    facility: int | None
+    severity: int | None
+    host: str | None
+    tag: str | None
     message: str
     malformed: bool
 

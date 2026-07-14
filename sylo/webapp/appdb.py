@@ -16,7 +16,6 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -82,12 +81,12 @@ def create_user(app_db_path: Path, username: str, password_hash: str) -> int:
         return cursor.lastrowid
 
 
-def get_user_by_username(app_db_path: Path, username: str) -> Optional[sqlite3.Row]:
+def get_user_by_username(app_db_path: Path, username: str) -> sqlite3.Row | None:
     with connect(app_db_path) as conn:
         return conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
 
 
-def get_user_by_id(app_db_path: Path, user_id: int) -> Optional[sqlite3.Row]:
+def get_user_by_id(app_db_path: Path, user_id: int) -> sqlite3.Row | None:
     with connect(app_db_path) as conn:
         return conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
 
@@ -101,7 +100,7 @@ def create_session(app_db_path: Path, token: str, user_id: int, csrf_token: str,
         conn.commit()
 
 
-def get_session(app_db_path: Path, token: str) -> Optional[sqlite3.Row]:
+def get_session(app_db_path: Path, token: str) -> sqlite3.Row | None:
     with connect(app_db_path) as conn:
         return conn.execute("SELECT * FROM sessions WHERE token = ?", (token,)).fetchone()
 
@@ -118,7 +117,7 @@ def purge_expired_sessions(app_db_path: Path, now_iso: str) -> None:
         conn.commit()
 
 
-def get_setting(app_db_path: Path, key: str, default: Optional[str] = None) -> Optional[str]:
+def get_setting(app_db_path: Path, key: str, default: str | None = None) -> str | None:
     with connect(app_db_path) as conn:
         row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
         return row["value"] if row else default

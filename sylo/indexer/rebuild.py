@@ -12,7 +12,6 @@ import argparse
 import logging
 import sqlite3
 from pathlib import Path
-from typing import Optional
 
 from ..parser import parse_syslog
 from .schema import apply_schema, insert_message
@@ -21,7 +20,7 @@ logger = logging.getLogger("sylo.indexer.rebuild")
 
 
 def rebuild_indexer(
-    data_dir: Path, index_dir: Path, months: Optional[set[str]] = None
+    data_dir: Path, index_dir: Path, months: set[str] | None = None
 ) -> dict[str, int]:
     """Deletes and recreates each targeted month's DB before reinserting --
     this path assumes the existing DB (if any) for that month is corrupt or

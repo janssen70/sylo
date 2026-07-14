@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 from fastapi import Request
 
 from . import auth
@@ -16,7 +14,7 @@ def get_config(request: Request) -> WebConfig:
     return request.app.state.config
 
 
-def get_optional_session(request: Request) -> Optional[auth.Session]:
+def get_optional_session(request: Request) -> auth.Session | None:
     config = get_config(request)
     token = request.cookies.get(config.session_cookie_name)
     return auth.get_session(config, token)

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Optional
 
 _PRI_RE = re.compile(rb"^<(\d{1,3})>")
 # RFC5424: "1 " version marker right after PRI.
@@ -27,10 +26,10 @@ _3164_TAG_RE = re.compile(rb"^([^:\[\s]{1,32})(\[\d+\])?:\s?(.*)$", re.DOTALL)
 
 @dataclass(slots=True)
 class ParsedFields:
-    facility: Optional[int]
-    severity: Optional[int]
-    host: Optional[str]
-    tag: Optional[str]
+    facility: int | None
+    severity: int | None
+    host: str | None
+    tag: str | None
     message: str
     malformed: bool
 
@@ -39,7 +38,7 @@ def _decode(b: bytes) -> str:
     return b.decode("utf-8", errors="replace")
 
 
-def _split_pri(raw: bytes) -> tuple[Optional[int], Optional[int], bytes]:
+def _split_pri(raw: bytes) -> tuple[int | None, int | None, bytes]:
     m = _PRI_RE.match(raw)
     if not m:
         return None, None, raw

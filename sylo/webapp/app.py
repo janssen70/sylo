@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
 
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse, RedirectResponse
@@ -29,7 +28,7 @@ def _wants_json(request: Request) -> bool:
     return path.startswith("/api/") or path == "/messages/stream"
 
 
-def create_app(config: WebConfig, initial_admin_password: Optional[str] = None) -> FastAPI:
+def create_app(config: WebConfig, initial_admin_password: str | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         appdb.init_db(config.app_db_path)

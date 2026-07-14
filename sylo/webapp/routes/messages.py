@@ -4,7 +4,6 @@ import asyncio
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
@@ -19,7 +18,7 @@ from ..queries import MessageFilter, search_messages
 router = APIRouter()
 
 
-def _normalize_bound(value: Optional[str]) -> Optional[str]:
+def _normalize_bound(value: str | None) -> str | None:
     if not value:
         return None
     try:
@@ -31,12 +30,12 @@ def _normalize_bound(value: Optional[str]) -> Optional[str]:
 
 
 def _parse_filter(
-    host: Optional[str],
-    severity: Optional[int],
-    facility: Optional[int],
-    start: Optional[str],
-    end: Optional[str],
-    text: Optional[str],
+    host: str | None,
+    severity: int | None,
+    facility: int | None,
+    start: str | None,
+    end: str | None,
+    text: str | None,
 ) -> MessageFilter:
     return MessageFilter(
         host=host or None,
@@ -55,12 +54,12 @@ def _filters_context(host, severity, facility, start, end, text) -> dict:
 @router.get("/api/messages")
 def api_messages(
     request: Request,
-    host: Optional[str] = None,
-    severity: Optional[int] = None,
-    facility: Optional[int] = None,
-    start: Optional[str] = None,
-    end: Optional[str] = None,
-    text: Optional[str] = None,
+    host: str | None = None,
+    severity: int | None = None,
+    facility: int | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    text: str | None = None,
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1),
     session: auth.Session = Depends(get_session),
@@ -75,12 +74,12 @@ def api_messages(
 @router.get("/messages", response_class=HTMLResponse)
 def messages_page(
     request: Request,
-    host: Optional[str] = None,
-    severity: Optional[int] = None,
-    facility: Optional[int] = None,
-    start: Optional[str] = None,
-    end: Optional[str] = None,
-    text: Optional[str] = None,
+    host: str | None = None,
+    severity: int | None = None,
+    facility: int | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    text: str | None = None,
     offset: int = Query(0, ge=0),
     session: auth.Session = Depends(get_session),
 ):
@@ -105,12 +104,12 @@ def messages_page(
 @router.get("/messages/results", response_class=HTMLResponse)
 def messages_results(
     request: Request,
-    host: Optional[str] = None,
-    severity: Optional[int] = None,
-    facility: Optional[int] = None,
-    start: Optional[str] = None,
-    end: Optional[str] = None,
-    text: Optional[str] = None,
+    host: str | None = None,
+    severity: int | None = None,
+    facility: int | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    text: str | None = None,
     offset: int = Query(0, ge=0),
     session: auth.Session = Depends(get_session),
 ):
@@ -137,7 +136,7 @@ def _sse_event(event: str, data: str) -> bytes:
     return f"event: {event}\n{payload}\n".encode("utf-8")
 
 
-def _poll_new_rows(db_path: Path, last_id: Optional[int]) -> tuple[list[dict], int]:
+def _poll_new_rows(db_path: Path, last_id: int | None) -> tuple[list[dict], int]:
     """last_id is None only for the very first poll of a given month --
     distinct from 0, which is a legitimate "seeded, table was empty at seed
     time" value. Conflating the two (e.g. both represented as 0) means the
@@ -164,7 +163,7 @@ def _poll_new_rows(db_path: Path, last_id: Optional[int]) -> tuple[list[dict], i
 
 
 async def _tail_generator(request: Request, config: WebConfig, templates):
-    last_id_by_month: dict[str, Optional[int]] = {}
+    last_id_by_month: dict[str, int | None] = {}
     poll_interval = config.sse_poll_interval_seconds
     row_template = templates.get_template("_tail_row.html")
     try:

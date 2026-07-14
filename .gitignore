@@ -1,7 +1,8 @@
+.claude/settings.local.json
+
 __pycache__/
 *.pyc
-.venv/
 *.egg-info/
-.pytest_cache/
-data/
+.venv/
 *.swp
+data/

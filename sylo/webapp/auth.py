@@ -9,7 +9,6 @@ import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 import bcrypt
 
@@ -28,7 +27,7 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-def ensure_default_admin(config: WebConfig, initial_password: Optional[str] = None) -> Optional[str]:
+def ensure_default_admin(config: WebConfig, initial_password: str | None = None) -> str | None:
     """First-run bootstrap: create the 'admin' user if none exists.
 
     Returns the generated password if one was generated (caller should log
@@ -46,7 +45,7 @@ def ensure_default_admin(config: WebConfig, initial_password: Optional[str] = No
     return generated
 
 
-def authenticate(config: WebConfig, username: str, password: str) -> Optional[int]:
+def authenticate(config: WebConfig, username: str, password: str) -> int | None:
     """Returns user_id on success, None on failure. Rate limiting is the
     caller's job (LoginRateLimiter below) -- kept separate since it's
     per-IP/process-lifetime state, not something that belongs in the DB
@@ -79,7 +78,7 @@ def create_session(config: WebConfig, user_id: int) -> Session:
     return Session(token, user_id, user["username"], csrf_token)
 
 
-def get_session(config: WebConfig, token: Optional[str]) -> Optional[Session]:
+def get_session(config: WebConfig, token: str | None) -> Session | None:
     if not token:
         return None
     row = appdb.get_session(config.app_db_path, token)
@@ -99,7 +98,7 @@ def destroy_session(config: WebConfig, token: str) -> None:
     appdb.delete_session(config.app_db_path, token)
 
 
-def verify_csrf(session: Session, submitted_token: Optional[str]) -> bool:
+def verify_csrf(session: Session, submitted_token: str | None) -> bool:
     return bool(submitted_token) and secrets.compare_digest(session.csrf_token, submitted_token)
 
 

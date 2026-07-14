@@ -9,19 +9,18 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from .config import WebConfig
 
 
 @dataclass(slots=True)
 class MessageFilter:
-    host: Optional[str] = None
-    severity: Optional[int] = None
-    facility: Optional[int] = None
-    start: Optional[str] = None  # inclusive, format_receipt_time-comparable string
-    end: Optional[str] = None  # inclusive, format_receipt_time-comparable string
-    text: Optional[str] = None  # FTS5 query string
+    host: str | None = None
+    severity: int | None = None
+    facility: int | None = None
+    start: str | None = None  # inclusive, format_receipt_time-comparable string
+    end: str | None = None  # inclusive, format_receipt_time-comparable string
+    text: str | None = None  # FTS5 query string
     malformed_only: bool = False
 
 
@@ -34,7 +33,7 @@ class SearchResult:
 @dataclass(slots=True)
 class DeviceInfo:
     source_ip: str
-    host: Optional[str]
+    host: str | None
     last_seen: str
     message_count: int
 
