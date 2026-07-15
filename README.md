@@ -1,5 +1,7 @@
 # Sylo
 
+Notice: This is not working yet
+
 Sylo is a self-contained syslog recorder: it listens for syslog messages
 (UDP/TCP 514, RFC3164 and RFC5424). It records them to per-device
 text files and indexes them into SQLite for fast search. A local web UI
