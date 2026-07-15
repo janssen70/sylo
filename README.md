@@ -210,3 +210,15 @@ Then, on any platform, visit `http://127.0.0.1:8514` (or whichever port you
 set `SYLO_WEB_PORT` to) and log in as `admin`
 with whichever password you set (or the one that was logged, if you didn't
 set one).
+
+
+## Troubleshooting
+In case port 514 is already taken or blocked, the syslog recorder can't
+function. You will notice this when opening the web interface. On Windows this
+could be caused by Windows Firewall, third party firewall or virus checker, or the
+presence of Docker or WSL. How to solve it is out of scope for Sylo. Some
+effort has been done to make it visible.
+
+## Authors
+Built with Claude Code as a much valued implementation aid - architectural
+decisions were mine.

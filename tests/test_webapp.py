@@ -140,6 +140,27 @@ def test_devices_page_renders(tmp_path):
         assert "No devices seen yet." in r.text
 
 
+def test_no_health_banner_when_receiver_running(tmp_path):
+    from sylo.receiver.health import ReceiverHealth
+
+    ReceiverHealth(tmp_path / "index").mark_running()
+    with make_client(tmp_path) as client:
+        login(client)
+        r = client.get("/devices")
+        assert "health-banner" not in r.text
+
+
+def test_health_banner_shown_when_receiver_failed(tmp_path):
+    from sylo.receiver.health import ReceiverHealth
+
+    ReceiverHealth(tmp_path / "index").mark_failed("[WinError 10013] access forbidden")
+    with make_client(tmp_path) as client:
+        login(client)
+        r = client.get("/devices")
+        assert "health-banner" in r.text
+        assert "access forbidden" in r.text
+
+
 def test_messages_page_and_api_reflect_seeded_data(tmp_path):
     index_dir = tmp_path / "index"
     index_dir.mkdir(parents=True)

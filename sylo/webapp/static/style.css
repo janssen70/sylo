@@ -73,6 +73,14 @@ td.ts { white-space: nowrap; font-variant-numeric: tabular-nums; color: #9aa4b2;
 .success { color: #8fe19a; }
 .hint { color: #9aa4b2; font-size: 0.85rem; }
 
+.health-banner {
+  padding: 0.6rem 1.5rem;
+  background: #3a2020;
+  color: #ff9d9d;
+  border-bottom: 1px solid #5a2c2c;
+  font-size: 0.9rem;
+}
+
 #live-tail {
   margin-top: 0.5rem;
   max-height: 320px;

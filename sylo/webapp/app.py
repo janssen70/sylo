@@ -12,6 +12,7 @@ from fastapi.templating import Jinja2Templates
 from . import appdb, auth
 from .config import WebConfig
 from .deps import NotAuthenticated
+from .receiver_health import read_receiver_health
 from .routes import auth as auth_routes
 from .routes import devices as devices_routes
 from .routes import health as health_routes
@@ -45,6 +46,11 @@ def create_app(config: WebConfig, initial_admin_password: str | None = None) -> 
     app = FastAPI(title="sylo", lifespan=lifespan)
     app.state.config = config
     app.state.templates = Jinja2Templates(directory=str(_HERE / "templates"))
+    # A plain Jinja global rather than per-route context (plan section 11) --
+    # every route would otherwise need to remember to pass this, and the
+    # banner in base.html applies uniformly across all of them. The read
+    # itself is one small file stat+parse, cheap enough to redo per request.
+    app.state.templates.env.globals["receiver_health"] = lambda: read_receiver_health(config.index_dir)
     app.state.rate_limiter = auth.LoginRateLimiter(
         config.login_rate_limit_attempts,
         config.login_rate_limit_window_seconds,

@@ -24,6 +24,14 @@
     </form>
   </nav>
   {% endif %}
+  {% if session %}
+    {% set health = receiver_health() %}
+    {% if not health.healthy %}
+    <div class="health-banner">
+      &#9888; {{ health.reason }}{% if health.since %} since <time datetime="{{ health.since }}">{{ health.since }}</time>{% endif %}
+    </div>
+    {% endif %}
+  {% endif %}
   <main>
     {% block content %}{% endblock %}
   </main>
