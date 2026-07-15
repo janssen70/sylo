@@ -289,11 +289,27 @@ begin
     StopServiceIfInstalled('sylo-webapp.exe', 'SyloWebapp');
     StopServiceIfInstalled('sylo-retention.exe', 'SyloRetention');
 
-    // Small cushion: the service reports SERVICE_STOPPED as soon as its
-    // stop_event is set, but the process itself needs a moment afterward to
-    // actually exit and release its exe file handle, which the [Files] step
-    // immediately following this needs to be able to overwrite.
-    Sleep(1000);
+    // pywin32's own `<exe> stop` (invoked above with no extra args) only
+    // requests the stop and returns once that request has been issued --
+    // Exec/ewWaitUntilTerminated waiting for that CLI call to return does
+    // NOT mean the service has actually reached SERVICE_STOPPED, let alone
+    // that the underlying process has exited and released its exe file
+    // handle. A fixed 1s cushion here (this function's first version)
+    // was nowhere near enough and led to exactly the "DeleteFile failed,
+    // code 5" error this comment is now next to: measured directly against
+    // sylo/webapp/main.py's real shutdown path (SIGTERM sent to a running
+    // instance with one open /messages/stream live-tail connection, same
+    // code this service wrapper drives), full process exit took ~5.5
+    // seconds, bounded by that module's own `timeout_graceful_shutdown=5`
+    // uvicorn setting -- it does not hang forever, but 1 second was never
+    // going to be enough whenever a browser was left open on that page.
+    // Receiver/retention have no equivalent slow path (they just
+    // `await stop_event.wait()`, no open connections to drain) so they
+    // exit almost immediately regardless; webapp is the one that needs the
+    // margin. 10s comfortably covers the measured ~5.5s worst case with
+    // room to spare for the frozen PyInstaller exe's own teardown overhead,
+    // at the one-time cost of a few extra seconds during install/upgrade.
+    Sleep(10000);
   end;
 end;
 
