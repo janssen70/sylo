@@ -4,13 +4,17 @@
 <h1>Messages</h1>
 
 <form id="search-form" hx-get="/messages/results" hx-target="#results" hx-swap="innerHTML" hx-push-url="true">
-  <input type="text" name="host" placeholder="host" value="{{ filters.host or '' }}">
+  <select name="host" multiple size="4">
+    {% for d in devices if d.host %}
+    <option value="{{ d.host }}" {{ "selected" if d.host in filters.host else "" }}>{{ d.host }} ({{ d.source_ip }})</option>
+    {% endfor %}
+  </select>
   <input type="number" name="severity" placeholder="severity (0-7)" min="0" max="7"
          value="{{ filters.severity if filters.severity is not none else '' }}">
   <input type="number" name="facility" placeholder="facility (0-23)" min="0" max="23"
          value="{{ filters.facility if filters.facility is not none else '' }}">
-  <input type="text" name="start" placeholder="start (ISO8601)" value="{{ filters.start or '' }}">
-  <input type="text" name="end" placeholder="end (ISO8601)" value="{{ filters.end or '' }}">
+  <input type="datetime-local" name="start" data-utc="{{ filters.start or '' }}">
+  <input type="datetime-local" name="end" data-utc="{{ filters.end or '' }}">
   <input type="text" name="text" placeholder="free text search" value="{{ filters.text or '' }}">
   <button type="submit">Search</button>
 </form>

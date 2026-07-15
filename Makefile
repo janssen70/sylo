@@ -1,6 +1,6 @@
-# Linux install for those running Sylo from a source clone (plan section 8,
-# open decision 5: plain systemd units + venv for v1, not a .deb/.rpm/Docker
-# image). Not needed for development -- see README.md's "Linux" build
+# Linux install for running Sylo from a source clone
+#
+# Not needed for development -- see README.md's "Linux" build
 # section for that; this targets a real long-running install.
 #
 #   sudo make install     # first install, or upgrade an existing one
@@ -71,3 +71,16 @@ purge: uninstall
 	rm -rf $(DATA_DIR) $(CONF_DIR)
 	getent passwd $(SERVICE_USER) >/dev/null && userdel $(SERVICE_USER) || true
 	@echo "Data, config, and service user removed."
+
+# Some commands to inspect/control the installed copy
+status: check-root
+	systemctl status $(UNITS)
+
+restart: check-root
+	systemctl restart $(UNITS)
+
+stop: check-root
+	systemctl stop $(UNITS)
+
+webapplog: check-root
+	journalctl -u sylo-webapp

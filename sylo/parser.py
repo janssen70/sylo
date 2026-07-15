@@ -38,6 +38,62 @@ def _decode(b: bytes) -> str:
     return b.decode("utf-8", errors="replace")
 
 
+def _split_structured_data(remainder: bytes) -> bytes:
+    """Separate RFC5424 MSG from the STRUCTURED-DATA that precedes it
+    (RFC 5424 section 6.3): NILVALUE ("-") or one or more bracketed
+    SD-ELEMENTs concatenated with no separator, e.g.
+    "[id@32473 a=\"1\"][id2@32473 b=\"2\"] the actual message".
+
+    A naive split on the first space (the previous approach here) only
+    works for the nilvalue case -- as soon as an SD-PARAM value contains a
+    space (routine for journald's systemd-journal-upload export format,
+    e.g. MESSAGE="some words"), it cuts partway through the SD-ELEMENT and
+    leaks the rest of it, MSG included, verbatim into the message field.
+    This instead walks the bytes tracking quote/escape state (PARAM-VALUE
+    may contain escaped \\", \\\\, \\] per the RFC) to find where
+    STRUCTURED-DATA actually ends.
+    """
+    if remainder.startswith(b"-"):
+        rest = remainder[1:]
+        return rest[1:] if rest[:1] == b" " else rest
+
+    if not remainder.startswith(b"["):
+        # Not well-formed STRUCTURED-DATA -- don't guess, keep everything
+        # rather than risk silently dropping real message content.
+        return remainder
+
+    i = 0
+    n = len(remainder)
+    while i < n and remainder[i : i + 1] == b"[":
+        i += 1
+        in_quotes = False
+        closed = False
+        while i < n:
+            c = remainder[i : i + 1]
+            if in_quotes:
+                if c == b"\\":
+                    i += 2
+                    continue
+                if c == b'"':
+                    in_quotes = False
+                i += 1
+                continue
+            if c == b'"':
+                in_quotes = True
+                i += 1
+                continue
+            if c == b"]":
+                i += 1
+                closed = True
+                break
+            i += 1
+        if not closed:
+            # Unterminated SD-ELEMENT -- malformed, keep everything as-is.
+            return remainder
+
+    return remainder[i + 1 :] if remainder[i : i + 1] == b" " else remainder[i:]
+
+
 def _split_pri(raw: bytes) -> tuple[int | None, int | None, bytes]:
     m = _PRI_RE.match(raw)
     if not m:
@@ -73,11 +129,10 @@ def _parse_syslog(raw: bytes) -> ParsedFields:
     m5424 = _5424_HEADER_RE.match(rest)
     if m5424:
         _timestamp, host, app_name, _procid, _msgid, remainder = m5424.groups()
-        # Structured data / MSG split: after APP-NAME PROCID MSGID there is
-        # STRUCTURED-DATA then optional " " MSG. We only care about tag+msg
-        # per the plan's envelope spec, so take the tail as the message.
-        remainder = remainder.split(b" ", 1)
-        msg = remainder[1] if len(remainder) == 2 else remainder[0]
+        # After APP-NAME PROCID MSGID there is STRUCTURED-DATA then optional
+        # " " MSG. We only care about tag+msg per the plan's envelope spec,
+        # so discard STRUCTURED-DATA entirely and keep only MSG.
+        msg = _split_structured_data(remainder)
         return ParsedFields(
             facility=facility,
             severity=severity,

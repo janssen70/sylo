@@ -35,6 +35,44 @@ def test_rfc5424_basic():
     assert not fields.malformed
 
 
+def test_rfc5424_structured_data_with_spaces_and_quotes_discarded():
+    # journald systemd-journal-upload export format: a single SD-ELEMENT
+    # whose SD-PARAM values contain spaces and colons -- the bug this
+    # guards against split on the first space and leaked the whole SD
+    # blob (MSG included) into the message field.
+    raw = (
+        b'<134>1 2026-07-15T08:47:53.015489+00:00 axis-b8a44f650000 systemd '
+        b'- - [origin@0 PRIORITY="6" SYSLOG_FACILITY="3" UNIT="proxy-confd.service" '
+        b'CODE_FILE=".13/src/core/unit.c" MESSAGE="proxy-confd.service: Deactivated successfully."] '
+        b"proxy-confd.service: Deactivated successfully."
+    )
+    fields = parse_syslog(raw)
+    assert fields.message == "proxy-confd.service: Deactivated successfully."
+    assert not fields.malformed
+
+
+def test_rfc5424_multiple_structured_data_elements():
+    raw = (
+        b"<165>1 2003-10-11T22:14:15.003Z mymachine.example.com evntslog "
+        b'- ID47 [exampleSDID@32473 iut="3" eventSource="Application"]'
+        b'[examplePriority@32473 class="high"] An application event log entry'
+    )
+    fields = parse_syslog(raw)
+    assert fields.message == "An application event log entry"
+
+
+def test_rfc5424_structured_data_no_trailing_msg():
+    raw = b'<165>1 2003-10-11T22:14:15.003Z host app - - [id@32473 a="1"]'
+    fields = parse_syslog(raw)
+    assert fields.message == ""
+
+
+def test_rfc5424_unterminated_structured_data_keeps_everything():
+    raw = b'<165>1 2003-10-11T22:14:15.003Z host app - - [id@32473 a="1" unterminated'
+    fields = parse_syslog(raw)
+    assert "unterminated" in fields.message
+
+
 def test_malformed_no_pri_never_raises():
     fields = parse_syslog(b"this is not syslog at all")
     assert fields.malformed

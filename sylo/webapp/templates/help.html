@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Help - sylo{% endblock %}
+{% block content %}
+<h1>Help</h1>
+
+<section class="help-section">
+  <h2>What is sylo?</h2>
+  <p>
+    sylo is a self-contained syslog recorder. It listens for syslog messages from
+    devices on your network (UDP/TCP 514, RFC 3164 and RFC 5424), writes every
+    message to plain-text files on disk, and indexes them in SQLite so you can
+    search and tail them from this web UI. Everything runs locally: the receiver,
+    the index, and this UI are separate processes on the same machine, so a
+    problem in the UI never affects message capture.
+  </p>
+</section>
+
+<section class="help-section">
+  <h2>Searching messages</h2>
+  <p>The <a href="/messages">Messages</a> page combines several filters, all of which can be used together:</p>
+  <ul>
+    <li>
+      <strong>Host</strong> — select one or more known devices (shown as "hostname (ip)").
+      Leave nothing selected to search all devices.
+    </li>
+    <li>
+      <strong>Severity</strong> — a single syslog severity level, 0 (emergency) through 7 (debug).
+    </li>
+    <li>
+      <strong>Facility</strong> — a single syslog facility code, 0 through 23 (e.g. 4 = auth, 16-23 = local0-local7).
+    </li>
+    <li>
+      <strong>Start / End</strong> — a date and time range. <strong>Use localtime: type times in
+      your own timezone, the system converts them to UTC for storage and search automatically.</strong>
+      Message timestamps shown in results are likewise converted from UTC to your browser's local time.
+    </li>
+    <li>
+      <strong>Free text</strong> — a full-text search over the message, host, and tag fields
+      (backed by SQLite FTS5), so it stays fast even over a large history.
+    </li>
+  </ul>
+  <p>
+    Results are paginated; use "Next page" to page through further matches. If no
+    time range is given, the search is limited to the most recent months to avoid
+    scanning the entire history by default — set a Start date to search further back.
+  </p>
+</section>
+
+<section class="help-section">
+  <h2>Live tail</h2>
+  <p>
+    The bottom of the Messages page shows a live tail of newly-arriving messages,
+    streamed to the browser as they're indexed (no page refresh needed).
+  </p>
+</section>
+
+<section class="help-section">
+  <h2>Devices</h2>
+  <p>
+    The <a href="/devices">Devices</a> page lists every device that has sent messages,
+    with its hostname, source IP, last-seen time, and message count.
+  </p>
+</section>
+
+<section class="help-section">
+  <h2>Retention</h2>
+  <p>
+    The <a href="/settings/retention">Retention</a> page controls how many days of
+    messages are kept (365 by default). Once a month's messages fall entirely
+    outside the retention window, both the indexed data and the raw log files for
+    that month are deleted automatically; the current month is never deleted.
+  </p>
+</section>
+{% endblock %}

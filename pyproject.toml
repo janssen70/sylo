@@ -28,3 +28,11 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["sylo*"]
+
+[tool.setuptools.package-data]
+# Non-.py assets that setuptools would otherwise silently drop from the
+# installed package -- webapp/app.py locates these via Path(__file__).parent
+# at runtime, so they must actually be on disk in site-packages, not just in
+# git. (PyInstaller's specs bundle these explicitly as `datas`; this is the
+# equivalent for the plain `pip install .` path used by `make install`.)
+sylo = ["webapp/static/**/*", "webapp/templates/**/*"]

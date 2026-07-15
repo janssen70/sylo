@@ -15,7 +15,7 @@ from .config import WebConfig
 
 @dataclass(slots=True)
 class MessageFilter:
-    host: str | None = None
+    host: list[str] | None = None
     severity: int | None = None
     facility: int | None = None
     start: str | None = None  # inclusive, format_receipt_time-comparable string
@@ -83,8 +83,9 @@ def _build_query(filt: MessageFilter, limit: int) -> tuple[str, list]:
         prefix = ""
 
     if filt.host:
-        sql += f" AND {prefix}host = ?"
-        params.append(filt.host)
+        placeholders = ",".join("?" for _ in filt.host)
+        sql += f" AND {prefix}host IN ({placeholders})"
+        params.extend(filt.host)
     if filt.severity is not None:
         sql += f" AND {prefix}severity = ?"
         params.append(filt.severity)
@@ -143,11 +144,20 @@ def search_messages(config: WebConfig, filt: MessageFilter, offset: int, limit: 
 
 
 def list_devices(config: WebConfig) -> list[DeviceInfo]:
-    """host is picked arbitrarily among a device's rows in a given month
-    (SQLite's bare-column-in-GROUP-BY behavior), not necessarily the most
-    recent -- devices normally report a stable hostname, so this is a
-    reasonable simplification for a listing page rather than a precise
-    "hostname as of last message" guarantee.
+    """Grouped by hostname (falling back to source_ip for rows with no
+    parsed host, e.g. malformed input) rather than by source_ip alone --
+    the receiver's per-device file/queue isolation stays keyed on source IP
+    (section 1's security property: a spoofed hostname must not be able to
+    claim another device's on-disk identity), but a device on DHCP getting
+    a new IP would otherwise show up here as a second, disconnected entry.
+    Grouping this read-only listing by hostname instead keeps one row per
+    device across an IP change, without touching the write path at all
+    (plan section 9, finding 3).
+
+    source_ip is picked arbitrarily among rows sharing a device_key in a
+    given month (SQLite's bare-column-in-GROUP-BY behavior), same caveat
+    the old host-picking logic had -- updated below to the most recent
+    row's source_ip once merged across months, same as host was before.
     """
     month_keys = _available_month_keys(config.index_dir)[: config.recent_months_scanned]
 
@@ -160,8 +170,9 @@ def list_devices(config: WebConfig) -> list[DeviceInfo]:
         conn.row_factory = sqlite3.Row
         try:
             rows = conn.execute(
-                "SELECT source_ip, host, COUNT(*) AS message_count, MAX(receipt_time) AS last_seen "
-                "FROM messages GROUP BY source_ip"
+                "SELECT COALESCE(host, source_ip) AS device_key, source_ip, host, "
+                "COUNT(*) AS message_count, MAX(receipt_time) AS last_seen "
+                "FROM messages GROUP BY device_key"
             ).fetchall()
         except sqlite3.OperationalError:
             continue
@@ -169,9 +180,9 @@ def list_devices(config: WebConfig) -> list[DeviceInfo]:
             conn.close()
 
         for row in rows:
-            existing = aggregated.get(row["source_ip"])
+            existing = aggregated.get(row["device_key"])
             if existing is None:
-                aggregated[row["source_ip"]] = DeviceInfo(
+                aggregated[row["device_key"]] = DeviceInfo(
                     row["source_ip"], row["host"], row["last_seen"], row["message_count"]
                 )
             else:
@@ -179,5 +190,6 @@ def list_devices(config: WebConfig) -> list[DeviceInfo]:
                 if row["last_seen"] > existing.last_seen:
                     existing.last_seen = row["last_seen"]
                     existing.host = row["host"]
+                    existing.source_ip = row["source_ip"]
 
     return sorted(aggregated.values(), key=lambda d: d.last_seen, reverse=True)

@@ -57,9 +57,23 @@ def test_filters_host_severity_facility(tmp_path):
     seed_month(index_dir, "2026-07", rows)
     config = WebConfig(index_dir=index_dir)
 
-    assert [r["message"] for r in search_messages(config, MessageFilter(host="hostB"), 0, 10).rows] == ["from B"]
+    assert [r["message"] for r in search_messages(config, MessageFilter(host=["hostB"]), 0, 10).rows] == ["from B"]
     assert [r["message"] for r in search_messages(config, MessageFilter(severity=6), 0, 10).rows] == ["from B"]
     assert [r["message"] for r in search_messages(config, MessageFilter(facility=4), 0, 10).rows] == ["from A"]
+
+
+def test_filters_host_multiselect(tmp_path):
+    index_dir = tmp_path / "index"
+    rows = [
+        base_row(host="hostA", message="from A"),
+        base_row(host="hostB", message="from B"),
+        base_row(host="hostC", message="from C"),
+    ]
+    seed_month(index_dir, "2026-07", rows)
+    config = WebConfig(index_dir=index_dir)
+
+    result = search_messages(config, MessageFilter(host=["hostA", "hostC"]), 0, 10)
+    assert {r["message"] for r in result.rows} == {"from A", "from C"}
 
 
 def test_free_text_search_uses_fts(tmp_path):
@@ -167,6 +181,47 @@ def test_list_devices_aggregates_across_months(tmp_path):
     assert by_ip["10.0.0.1"].last_seen == "2026-07-01T00:00:00.000000+00:00"
     assert by_ip["10.0.0.2"].message_count == 1
     assert devices[0].source_ip == "10.0.0.2"  # last_seen 2026-07-02, most recent first
+
+
+def test_list_devices_groups_by_host_across_ip_change(tmp_path):
+    # Same device (hostA), DHCP handed it a new IP between June and July --
+    # should collapse into one entry, not fragment into two (plan section 9,
+    # finding 3), keyed by hostname rather than the now-stale IP.
+    index_dir = tmp_path / "index"
+    seed_month(
+        index_dir,
+        "2026-06",
+        [base_row(source_ip="10.0.0.1", host="hostA", receipt_time="2026-06-01T00:00:00.000000+00:00")],
+    )
+    seed_month(
+        index_dir,
+        "2026-07",
+        [base_row(source_ip="10.0.0.9", host="hostA", receipt_time="2026-07-01T00:00:00.000000+00:00")],
+    )
+    config = WebConfig(index_dir=index_dir, recent_months_scanned=2)
+
+    devices = list_devices(config)
+    assert len(devices) == 1
+    assert devices[0].host == "hostA"
+    assert devices[0].message_count == 2
+    # Most recent IP wins for display, matching the existing "most recent
+    # row wins" rule already used for host before this change.
+    assert devices[0].source_ip == "10.0.0.9"
+
+
+def test_list_devices_falls_back_to_source_ip_when_host_missing(tmp_path):
+    index_dir = tmp_path / "index"
+    seed_month(
+        index_dir,
+        "2026-07",
+        [base_row(source_ip="10.0.0.5", host=None, malformed=True)],
+    )
+    config = WebConfig(index_dir=index_dir, recent_months_scanned=1)
+
+    devices = list_devices(config)
+    assert len(devices) == 1
+    assert devices[0].host is None
+    assert devices[0].source_ip == "10.0.0.5"
 
 
 def test_no_index_dir_returns_empty(tmp_path):

@@ -15,6 +15,7 @@ from .deps import NotAuthenticated
 from .routes import auth as auth_routes
 from .routes import devices as devices_routes
 from .routes import health as health_routes
+from .routes import help as help_routes
 from .routes import messages as messages_routes
 from .routes import settings as settings_routes
 
@@ -62,6 +63,7 @@ def create_app(config: WebConfig, initial_admin_password: str | None = None) -> 
     app.include_router(messages_routes.router)
     app.include_router(devices_routes.router)
     app.include_router(settings_routes.router)
+    app.include_router(help_routes.router)
 
     @app.get("/")
     def root():

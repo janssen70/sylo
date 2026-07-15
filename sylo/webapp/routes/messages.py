@@ -13,7 +13,7 @@ from ... import timeutil
 from .. import auth
 from ..config import WebConfig
 from ..deps import get_config, get_session
-from ..queries import MessageFilter, search_messages
+from ..queries import MessageFilter, list_devices, search_messages
 
 router = APIRouter()
 
@@ -30,7 +30,7 @@ def _normalize_bound(value: str | None) -> str | None:
 
 
 def _parse_filter(
-    host: str | None,
+    host: list[str] | None,
     severity: int | None,
     facility: int | None,
     start: str | None,
@@ -48,13 +48,13 @@ def _parse_filter(
 
 
 def _filters_context(host, severity, facility, start, end, text) -> dict:
-    return {"host": host, "severity": severity, "facility": facility, "start": start, "end": end, "text": text}
+    return {"host": host or [], "severity": severity, "facility": facility, "start": start, "end": end, "text": text}
 
 
 @router.get("/api/messages")
 def api_messages(
     request: Request,
-    host: str | None = None,
+    host: list[str] | None = Query(None),
     severity: int | None = None,
     facility: int | None = None,
     start: str | None = None,
@@ -74,7 +74,7 @@ def api_messages(
 @router.get("/messages", response_class=HTMLResponse)
 def messages_page(
     request: Request,
-    host: str | None = None,
+    host: list[str] | None = Query(None),
     severity: int | None = None,
     facility: int | None = None,
     start: str | None = None,
@@ -97,6 +97,7 @@ def messages_page(
             "offset": offset,
             "limit": config.default_page_size,
             "filters": _filters_context(host, severity, facility, start, end, text),
+            "devices": list_devices(config),
         },
     )
 
@@ -104,7 +105,7 @@ def messages_page(
 @router.get("/messages/results", response_class=HTMLResponse)
 def messages_results(
     request: Request,
-    host: str | None = None,
+    host: list[str] | None = Query(None),
     severity: int | None = None,
     facility: int | None = None,
     start: str | None = None,

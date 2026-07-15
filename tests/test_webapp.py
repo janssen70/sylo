@@ -182,6 +182,9 @@ def test_messages_page_and_api_reflect_seeded_data(tmp_path):
         r = client.get("/api/messages", params={"host": "nonexistent-host"})
         assert r.json()["rows"] == []
 
+        r = client.get("/api/messages", params={"host": ["myhost", "other-host"]})
+        assert r.json()["rows"][0]["message"] == "hello from seed"
+
 
 def test_api_messages_limit_capped_at_max_page_size(tmp_path):
     with make_client(tmp_path, max_page_size=10) as client:
@@ -191,8 +194,19 @@ def test_api_messages_limit_capped_at_max_page_size(tmp_path):
         assert r.json()["limit"] == 10
 
 
-@pytest.mark.parametrize("path", ["/messages", "/devices", "/settings/retention", "/api/messages"])
+@pytest.mark.parametrize("path", ["/messages", "/devices", "/settings/retention", "/api/messages", "/help"])
 def test_all_protected_routes_require_session(tmp_path, path):
     with make_client(tmp_path) as client:
         r = client.get(path, follow_redirects=False)
         assert r.status_code in (303, 401)
+
+
+def test_help_page_renders_and_is_linked_from_nav(tmp_path):
+    with make_client(tmp_path) as client:
+        login(client)
+        r = client.get("/help")
+        assert r.status_code == 200
+        assert "Use localtime" in r.text
+
+        r = client.get("/messages")
+        assert '<a href="/help">Help</a>' in r.text
