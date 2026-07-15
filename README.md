@@ -63,7 +63,7 @@ The next step -- compiling `packaging\inno\sylo.iss` with Inno Setup's
 `ISCC.exe` into a single `sylo-setup.exe` installer:
 
 ```powershell
-iscc packaging\inno\sylo.iss
+"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging\inno\sylo.iss
 ```
 
 Build/run-verified on a real Windows machine: compiles clean and a full
