@@ -120,6 +120,56 @@ begin
   Result := ExpandConstant('{commonappdata}') + '\Sylo\data\app.sqlite3';
 end;
 
+// A service's registry key only exists once InstallService (below) has
+// registered it, which only happens from this same installer's ssPostInstall
+// step -- so its presence is a reliable "has this been installed before"
+// signal, independent of whether an in-place upgrade has also gotten as far
+// as overwriting the exes yet.
+function ServiceInstalled(ServiceName: String): Boolean;
+begin
+  Result := RegKeyExists(HKLM, 'SYSTEM\CurrentControlSet\Services\' + ServiceName);
+end;
+
+function IsUpgrade(): Boolean;
+begin
+  Result := ServiceInstalled('SyloWebapp');
+end;
+
+// Carries the previously-configured port forward across an upgrade instead
+// of silently reverting it to {#MyDefaultPort} -- the port wizard page is
+// skipped entirely on upgrade (ShouldSkipPage below), so this is the only
+// place that value comes from. Mirrors RegWriteMultiStringValue's own
+// single-joined-string convention (see InstallService's comment) on the read
+// side: RegQueryMultiStringValue returns the whole REG_MULTI_SZ as one
+// String with entries separated by embedded #0 characters, not an array.
+function ReadExistingWebPort(): String;
+var
+  EnvData, Line: String;
+  Lines: TStringList;
+  i: Integer;
+begin
+  Result := '{#MyDefaultPort}';
+  if RegQueryMultiStringValue(HKLM, 'SYSTEM\CurrentControlSet\Services\SyloWebapp', 'Environment', EnvData) then
+  begin
+    StringChange(EnvData, #0, #13#10);
+    Lines := TStringList.Create;
+    try
+      Lines.Text := EnvData;
+      for i := 0 to Lines.Count - 1 do
+      begin
+        Line := Lines[i];
+        if Copy(Line, 1, Length('SYLO_WEB_PORT=')) = 'SYLO_WEB_PORT=' then
+        begin
+          Result := Copy(Line, Length('SYLO_WEB_PORT=') + 1, MaxInt);
+          Break;
+        end;
+      end;
+    finally
+      Lines.Free;
+    end;
+  end;
+end;
+
 procedure InitializeWizard();
 begin
   AdminPasswordPage := CreateInputQueryPage(
@@ -140,7 +190,21 @@ begin
     'in use by something else on this machine.'
   );
   PortPage.Add('Port:', False);
-  PortPage.Values[0] := '{#MyDefaultPort}';
+  if IsUpgrade() then
+    PortPage.Values[0] := ReadExistingWebPort()
+  else
+    PortPage.Values[0] := '{#MyDefaultPort}';
+end;
+
+// Upgrading an existing install: the admin account already exists and the
+// port is already configured, so re-asking either would be either a no-op
+// (password -- webapp only ever consults it on its very first run) or a
+// confusing silent revert-to-default (port, if we didn't carry it forward
+// above). Both pages are skipped, not just left at their prior values,
+// specifically per the user's ask not to be prompted again on upgrade.
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := IsUpgrade() and ((PageID = AdminPasswordPage.ID) or (PageID = PortPage.ID));
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -173,6 +237,64 @@ end;
 function GetWebUrl(Param: String): String;
 begin
   Result := 'http://127.0.0.1:' + PortPage.Values[0] + '/';
+end;
+
+function StopServiceIfInstalled(ExeName, ServiceName: String): Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := True;
+  if ServiceInstalled(ServiceName) then
+  begin
+    if not Exec(ExpandConstant('{app}') + '\' + ExeName, 'stop', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+    begin
+      MsgBox('Failed to launch stop command for ' + ServiceName + '.', mbError, MB_OK);
+      Result := False;
+    end;
+    // A non-zero ResultCode here is expected/harmless when the service was
+    // already stopped -- not treated as a failure worth blocking Setup over.
+  end;
+end;
+
+// Runs once, right after the wizard collects all input and right before
+// [Files] starts copying -- the documented hook for "make sure the app isn't
+// running before Setup touches its files" (a real prior deployment hit
+// exactly this: an in-place upgrade tried to overwrite sylo-webapp.exe while
+// the old SyloWebapp service still had it open, which Windows can't do).
+// Confirms with the user first rather than silently killing a service that
+// may be actively recording live syslog traffic.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  Result := '';
+  if ServiceInstalled('SyloReceiver') or ServiceInstalled('SyloWebapp') or ServiceInstalled('SyloRetention') then
+  begin
+    // MB_DEFBUTTON2 makes "No" the default -- unlike the uninstall data-keep
+    // prompt (where the safe default is the non-destructive choice), here
+    // stopping is the disruptive action, so a stray Enter press shouldn't
+    // trigger it.
+    if MsgBox(
+      'An existing Sylo installation is currently running and must be stopped ' +
+      'before Setup can continue.' + #13#10#13#10 +
+      'This will briefly interrupt syslog message collection -- any messages ' +
+      'sent while it is stopped are lost, same as any other planned restart. ' +
+      'Stop it now and continue with Setup?',
+      mbConfirmation, MB_YESNO or MB_DEFBUTTON2
+    ) <> IDYES then
+    begin
+      Result := 'Setup cannot continue while Sylo is running. Re-run Setup when you are ready to stop it.';
+      Exit;
+    end;
+
+    StopServiceIfInstalled('sylo-receiver.exe', 'SyloReceiver');
+    StopServiceIfInstalled('sylo-webapp.exe', 'SyloWebapp');
+    StopServiceIfInstalled('sylo-retention.exe', 'SyloRetention');
+
+    // Small cushion: the service reports SERVICE_STOPPED as soon as its
+    // stop_event is set, but the process itself needs a moment afterward to
+    // actually exit and release its exe file handle, which the [Files] step
+    // immediately following this needs to be able to overwrite.
+    Sleep(1000);
+  end;
 end;
 
 // Registers a service (via that exe's own pywin32 install command), writes
