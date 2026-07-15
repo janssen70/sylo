@@ -1,5 +1,7 @@
 # Sylo
 
+Notice: This is not working yet
+
 Sylo is a self-contained syslog recorder: it listens for syslog messages
 (UDP/TCP 514, RFC3164 and RFC5424). It records them to per-device
 text files and indexes them into SQLite for fast search. A local web UI
@@ -61,7 +63,7 @@ The next step -- compiling `packaging\inno\sylo.iss` with Inno Setup's
 `ISCC.exe` into a single `sylo-setup.exe` installer:
 
 ```powershell
-iscc packaging\inno\sylo.iss
+"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging\inno\sylo.iss
 ```
 
 Build/run-verified on a real Windows machine: compiles clean and a full
