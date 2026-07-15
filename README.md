@@ -15,14 +15,12 @@ It's made up of three independent processes, each of which can be started,
 stopped, and restarted without affecting the others:
 
 - **Receiver** (`sylo.receiver`) — listens on UDP/TCP 514, writes raw
-  messages to daily per-device text files, and feeds an embedded indexer
-  that maintains a monthly SQLite index (with full-text search).
+  messages to daily per-device text files, and keeps a searchable index.
 - **Webapp** (`sylo.webapp`) — FastAPI + htmx UI on `127.0.0.1:8514` by
   default (configurable via `SYLO_WEB_PORT`): message browser/search, live
-  tail (SSE), retention settings, device list. Only ever reads the SQLite
-  index, never the raw text files.
+  tail (SSE), retention settings, device list.
 - **Retention manager** (`sylo.retention`) — a daily background job that
-  drops whole monthly partitions (index DB + matching raw files) once
+  drops whole monthly partitions once
   they're older than the configured retention window.
 
 ## Building
@@ -85,8 +83,7 @@ pip install -e ".[dev]"   # add pytest etc.; drop the extra for a runtime-only i
 pytest -q                 # optional: confirm the test suite passes
 ```
 
-**A real install**, running as systemd services (see `doc/sylo-plan.md`
-section 8): `sudo make install`. This is not a `.deb`/`.rpm`/Docker image --
+**A real install**, running as systemd services: `sudo make install`. This is not a `.deb`/`.rpm`/Docker image --
 it builds a venv under `/opt/sylo` from this source tree (via `pip install
 .`, no `-e`, so the clone directory is disposable afterward), creates a
 system `sylo` user, and installs `sylo-receiver.service`,
@@ -109,7 +106,7 @@ with the `sylo` user, for a fully clean removal.
 
 ## Setup
 
-Whichever platform you're on, all three processes are configured entirely
+Ob both platforms all three processes are configured entirely
 through environment variables (no config file). The ones that matter for a
 first run:
 
@@ -206,7 +203,7 @@ run by that same venv's Python gets it too — fine for a throwaway dev venv,
 which is why the real install above uses per-unit `AmbientCapabilities`
 instead, scoped to just the receiver service.)
 
-Then, on any platform, visit `http://127.0.0.1:8514` (or whichever port you
+Then, on any platform, visit `http://127.0.0.1:8514` (or the port you
 set `SYLO_WEB_PORT` to) and log in as `admin`
 with whichever password you set (or the one that was logged, if you didn't
 set one).
