@@ -213,10 +213,11 @@ set one).
 
 ## Troubleshooting
 In case port 514 is already taken or blocked, the syslog recorder can't
-function. You will notice this when opening the web interface. On Windows this
-could be caused by Windows Firewall, third party firewall or virus checker, or the
-presence of Docker or WSL. How to solve it is out of scope for Sylo. Some
-effort has been done to make it visible.
+get hold of it. You will notice this when opening the web interface. On Windows this
+could be caused by a third party firewall or virus checker that blocks the port, or the
+presence of Docker or WSL. Standard firewalls just drop the traffice, which will go unnoticed, there is no error message and no data.
+Note that the Windows Installer writes a firewall rule to avoid that.
+How to solve it is out of scope for Sylo. Some effort has been taken to try prevent it and/or make it visible.
 
 ## Authors
 Built with Claude Code as a much valued implementation aid - architectural
