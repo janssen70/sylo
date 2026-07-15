@@ -10,7 +10,12 @@ class WebConfig:
     # Localhost-only in v1 (plan line 41); LAN bind is a future flag, not a
     # behavior change to anything else in this config.
     bind_host: str = "127.0.0.1"
-    port: int = 8080
+    # 8514 (not any registered/well-known IANA port, and distinct from the
+    # very commonly-already-bound 8080/8000/3000/etc. dev-tool ports) --
+    # loosely themed on syslog's own port 514, chosen after a real deployment
+    # hit 8080 already in use by other software on the target machine.
+    # Configurable via SYLO_WEB_PORT; this is only the applied default.
+    port: int = 8514
 
     # Separate from the monthly message-index DBs: users/sessions/settings
     # have a different lifecycle (never rotated/dropped), so they don't

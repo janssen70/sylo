@@ -17,9 +17,10 @@ stopped, and restarted without affecting the others:
 - **Receiver** (`sylo.receiver`) — listens on UDP/TCP 514, writes raw
   messages to daily per-device text files, and feeds an embedded indexer
   that maintains a monthly SQLite index (with full-text search).
-- **Webapp** (`sylo.webapp`) — FastAPI + htmx UI on `127.0.0.1:8080`:
-  message browser/search, live tail (SSE), retention settings, device list.
-  Only ever reads the SQLite index, never the raw text files.
+- **Webapp** (`sylo.webapp`) — FastAPI + htmx UI on `127.0.0.1:8514` by
+  default (configurable via `SYLO_WEB_PORT`): message browser/search, live
+  tail (SSE), retention settings, device list. Only ever reads the SQLite
+  index, never the raw text files.
 - **Retention manager** (`sylo.retention`) — a daily background job that
   drops whole monthly partitions (index DB + matching raw files) once
   they're older than the configured retention window.
@@ -150,7 +151,9 @@ environment directly.
 running it installs all three services (`SyloReceiver`, `SyloWebapp`,
 `SyloRetention`), wires up the environment variables above for you, starts
 them, and leaves them registered for auto-start on boot. Nothing further
-to do — open `http://127.0.0.1:8080` and log in as `admin`.
+to do — the installer prompts for the webapp's port (default `8514`) and
+puts a "Sylo" shortcut in the Start Menu (and optionally the desktop) that
+opens it directly in your browser; log in as `admin`.
 
 **Windows, running the exes directly** (without the installer, e.g. to
 test a build): each exe is dual-mode, per pywin32's `HandleCommandLine` —
@@ -183,6 +186,7 @@ export SYLO_DATA_DIR=/path/to/data/raw
 export SYLO_INDEX_DIR=/path/to/data/index
 export SYLO_APP_DB=/path/to/data/app.sqlite3
 export SYLO_ADMIN_PASSWORD=choose-a-password   # first run only
+export SYLO_WEB_PORT=8514                      # optional, this is the default
 
 python -m sylo.receiver.main &
 python -m sylo.webapp.main &
@@ -202,6 +206,7 @@ run by that same venv's Python gets it too — fine for a throwaway dev venv,
 which is why the real install above uses per-unit `AmbientCapabilities`
 instead, scoped to just the receiver service.)
 
-Then, on any platform, visit `http://127.0.0.1:8080` and log in as `admin`
+Then, on any platform, visit `http://127.0.0.1:8514` (or whichever port you
+set `SYLO_WEB_PORT` to) and log in as `admin`
 with whichever password you set (or the one that was logged, if you didn't
 set one).

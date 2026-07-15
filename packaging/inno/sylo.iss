@@ -25,11 +25,18 @@
 ; Fixed once and never changed across releases -- Inno uses this GUID (not
 ; the app name) to recognize "this is an upgrade of the same product."
 #define MyAppId "{{0A55DFC6-FFEB-4AC1-8F72-626058010BB0}"
+; Chosen after a real deployment found 8080 already in use by other software
+; on the target machine -- see sylo/webapp/config.py for the port rationale.
+; Kept in sync with WebConfig.port's own default by hand; there's no build
+; step that shares a single source of truth between the two.
+#define MyDefaultPort "8514"
 
 [Setup]
 AppId={#MyAppId}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
+AppVerName={#MyAppName} {#MyAppVersion}
+VersionInfoVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\Sylo
 DefaultGroupName=Sylo
@@ -62,6 +69,20 @@ Source: "..\..\dist\sylo-retention.exe"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{commonappdata}\Sylo\data\raw"
 Name: "{commonappdata}\Sylo\data\index"
 
+[Tasks]
+Name: "desktopicon"; Description: "Create a &desktop icon that opens Sylo in your browser"; GroupDescription: "Additional icons:"
+
+[Icons]
+; {group} still gets created even though DisableProgramGroupPage=yes just
+; skips asking the user which group name to use -- it silently uses
+; DefaultGroupName ("Sylo") instead. Without at least one Icons entry
+; referencing {group}, no Start Menu folder would be created at all, which
+; was the direct cause of the uninstaller having no easy-to-find entry point
+; beyond Control Panel.
+Name: "{group}\Sylo"; Filename: "{code:GetWebUrl}"; IconFilename: "{app}\sylo-webapp.exe"
+Name: "{group}\Uninstall Sylo"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\Sylo"; Filename: "{code:GetWebUrl}"; Tasks: desktopicon; IconFilename: "{app}\sylo-webapp.exe"
+
 [UninstallRun]
 ; Runs (in this order) before Inno deletes the app's files -- stop, then
 ; unregister, each service. skipifdoesntexist covers re-running an
@@ -82,6 +103,7 @@ Filename: "{app}\sylo-retention.exe"; Parameters: "remove"; Flags: runhidden wai
 [Code]
 var
   AdminPasswordPage: TInputQueryWizardPage;
+  PortPage: TInputQueryWizardPage;
 
 function DataRawDir(): String;
 begin
@@ -109,9 +131,21 @@ begin
   );
   AdminPasswordPage.Add('Password:', True);
   AdminPasswordPage.Add('Confirm password:', True);
+
+  PortPage := CreateInputQueryPage(
+    AdminPasswordPage.ID,
+    'Web UI Port',
+    'Choose the TCP port the Sylo web UI listens on',
+    'Default is {#MyDefaultPort}. Change this only if that port is already ' +
+    'in use by something else on this machine.'
+  );
+  PortPage.Add('Port:', False);
+  PortPage.Values[0] := '{#MyDefaultPort}';
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  PortNum: Integer;
 begin
   Result := True;
   if CurPageID = AdminPasswordPage.ID then
@@ -121,7 +155,24 @@ begin
       MsgBox('Passwords do not match.', mbError, MB_OK);
       Result := False;
     end;
+  end
+  else if CurPageID = PortPage.ID then
+  begin
+    PortNum := StrToIntDef(PortPage.Values[0], -1);
+    if (PortNum < 1) or (PortNum > 65535) then
+    begin
+      MsgBox('Enter a valid port number (1-65535).', mbError, MB_OK);
+      Result := False;
+    end;
   end;
+end;
+
+// Used by the [Icons] entries above ({code:GetWebUrl}) for both the Start
+// Menu and optional desktop shortcut -- one place computing the URL so the
+// two shortcuts and the actual configured port can never drift apart.
+function GetWebUrl(Param: String): String;
+begin
+  Result := 'http://127.0.0.1:' + PortPage.Values[0] + '/';
 end;
 
 // Registers a service (via that exe's own pywin32 install command), writes
@@ -196,13 +247,14 @@ begin
 
     if AdminPassword <> '' then
     begin
-      SetArrayLength(WebappEnv, 3);
-      WebappEnv[2] := 'SYLO_ADMIN_PASSWORD=' + AdminPassword;
+      SetArrayLength(WebappEnv, 4);
+      WebappEnv[3] := 'SYLO_ADMIN_PASSWORD=' + AdminPassword;
     end
     else
-      SetArrayLength(WebappEnv, 2);
+      SetArrayLength(WebappEnv, 3);
     WebappEnv[0] := 'SYLO_APP_DB=' + AppDbPath();
     WebappEnv[1] := 'SYLO_INDEX_DIR=' + DataIndexDir();
+    WebappEnv[2] := 'SYLO_WEB_PORT=' + PortPage.Values[0];
     InstallService('sylo-webapp.exe', 'SyloWebapp', WebappEnv);
 
     SetArrayLength(RetentionEnv, 3);
