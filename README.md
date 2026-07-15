@@ -1,17 +1,16 @@
 # Sylo
 
-Notice: This is not working yet
-
 Sylo is a self-contained syslog recorder: it listens for syslog messages
 (UDP/TCP 514, RFC3164 and RFC5424). It records them to per-device
 text files and indexes them into SQLite for fast search. A local web UI
 lets you browse/search history, tail messages live, manage retention, and
 see which devices are reporting in.
 
-
 It is intended for monitoring edge devices in small-scale deployments
 where a full-fledged and IT-heavy syslog solution would introduce more problems
 than it solves.
+
+Some more information and Windows installer binary can be found [here](https://philea.my-system.nl/pages/sylo).
 
 It's made up of three independent processes, each of which can be started,
 stopped, and restarted without affecting the others:
