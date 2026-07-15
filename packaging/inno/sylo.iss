@@ -47,6 +47,15 @@ DisableProgramGroupPage=yes
 ; requirement, see plan section 8) -- admin is needed here purely for the
 ; service-control and ProgramData-write operations below.
 PrivilegesRequired=admin
+; Guards against two Setup instances racing against the same services --
+; observed directly during development: two sylo-setup.exe processes ended up
+; running at once, and the one that finished its wizard init (reading the
+; then-current port to carry forward) while the other had already stopped
+; and unregistered the old SyloWebapp service saw "no prior install" and
+; wrote the default port back, silently reverting an intentionally-configured
+; port. AppMutex makes a second Setup instance wait for the first to finish
+; instead of interleaving with it.
+AppMutex={#MyAppId}
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\..\dist\installer
 OutputBaseFilename=sylo-setup
@@ -135,20 +144,21 @@ begin
   Result := ServiceInstalled('SyloWebapp');
 end;
 
-// Carries the previously-configured port forward across an upgrade instead
-// of silently reverting it to {#MyDefaultPort} -- the port wizard page is
-// skipped entirely on upgrade (ShouldSkipPage below), so this is the only
-// place that value comes from. Mirrors RegWriteMultiStringValue's own
-// single-joined-string convention (see InstallService's comment) on the read
-// side: RegQueryMultiStringValue returns the whole REG_MULTI_SZ as one
-// String with entries separated by embedded #0 characters, not an array.
-function ReadExistingWebPort(): String;
+// Carries a previously-configured SyloWebapp env value forward across an
+// upgrade instead of silently reverting/dropping it -- both the port and
+// admin-password wizard pages are skipped entirely on upgrade (ShouldSkipPage
+// below), so this is the only place either value can come from. Mirrors
+// RegWriteMultiStringValue's own single-joined-string convention (see
+// InstallService's comment) on the read side: RegQueryMultiStringValue
+// returns the whole REG_MULTI_SZ as one String with entries separated by
+// embedded #0 characters, not an array.
+function ReadExistingEnvValue(Key, DefaultValue: String): String;
 var
   EnvData, Line: String;
   Lines: TStringList;
   i: Integer;
 begin
-  Result := '{#MyDefaultPort}';
+  Result := DefaultValue;
   if RegQueryMultiStringValue(HKLM, 'SYSTEM\CurrentControlSet\Services\SyloWebapp', 'Environment', EnvData) then
   begin
     StringChange(EnvData, #0, #13#10);
@@ -158,9 +168,9 @@ begin
       for i := 0 to Lines.Count - 1 do
       begin
         Line := Lines[i];
-        if Copy(Line, 1, Length('SYLO_WEB_PORT=')) = 'SYLO_WEB_PORT=' then
+        if Copy(Line, 1, Length(Key)) = Key then
         begin
-          Result := Copy(Line, Length('SYLO_WEB_PORT=') + 1, MaxInt);
+          Result := Copy(Line, Length(Key) + 1, MaxInt);
           Break;
         end;
       end;
@@ -168,6 +178,28 @@ begin
       Lines.Free;
     end;
   end;
+end;
+
+function ReadExistingWebPort(): String;
+begin
+  Result := ReadExistingEnvValue('SYLO_WEB_PORT=', '{#MyDefaultPort}');
+end;
+
+// Without this, AdminPasswordPage.Values[0] stays blank on every upgrade
+// (the page is skipped, so nothing else ever populates it) -- CurStepChanged
+// then treats that blank as "no password wanted" and writes a shorter
+// WebappEnv array with no SYLO_ADMIN_PASSWORD entry at all. Since
+// InstallService's RegWriteMultiStringValue call replaces the entire
+// Environment value rather than merging into it, that silently erased
+// whatever password had been set at first install, on every single
+// upgrade -- found from a real report: an admin password entered on first
+// install was gone after the next upgrade. Mirrors ReadExistingWebPort's
+// carry-forward exactly, just against a different key and with an empty
+// (not a fixed constant) default, matching "leave blank to auto-generate"
+// for a genuinely first-ever install.
+function ReadExistingAdminPassword(): String;
+begin
+  Result := ReadExistingEnvValue('SYLO_ADMIN_PASSWORD=', '');
 end;
 
 procedure InitializeWizard();
@@ -181,6 +213,11 @@ begin
   );
   AdminPasswordPage.Add('Password:', True);
   AdminPasswordPage.Add('Confirm password:', True);
+  if IsUpgrade() then
+  begin
+    AdminPasswordPage.Values[0] := ReadExistingAdminPassword();
+    AdminPasswordPage.Values[1] := AdminPasswordPage.Values[0];
+  end;
 
   PortPage := CreateInputQueryPage(
     AdminPasswordPage.ID,
@@ -239,6 +276,55 @@ begin
   Result := 'http://127.0.0.1:' + PortPage.Values[0] + '/';
 end;
 
+// RenameFile(X, X) requires exclusive access on Windows -- if some other
+// handle is still open on the file (whether that's the old service process
+// itself, or something external like antivirus real-time-scanning it right
+// after that process closed it), the self-rename fails. Used to poll for
+// "is this file actually free to overwrite yet" instead of guessing a fixed
+// delay.
+function IsFileLocked(FileName: String): Boolean;
+begin
+  Result := not RenameFile(FileName, FileName);
+end;
+
+// Polls rather than sleeping a fixed amount: a live investigation of this
+// exact "DeleteFile failed, code 5 (Access is denied)" error (on a real
+// Windows machine, sylo-webapp.exe, mid-upgrade) found the owning service
+// process had ALREADY fully exited by the time Setup's own file-copy step
+// hit the error -- something else (most likely Windows Defender's real-time
+// protection scanning the just-closed exe; MsMpEng.exe was confirmed running
+// on that machine) held a separate, short-lived lock on the file afterward.
+// Clicking Inno's built-in "Try again" in the resulting error dialog
+// succeeded immediately, with no code change and no extra waiting beyond
+// that one retry -- confirming the lock was transient and unrelated to
+// process-exit timing. A flat Sleep(10000) (this function's predecessor)
+// is the wrong tool for that: it can neither shorten the common case (file
+// frees up in under a second) nor reliably bound the uncommon one (a scan
+// can in principle take longer than any fixed number chosen here). Polling
+// actually checks the real condition instead of guessing, and still falls
+// back to Inno's own interactive Retry/Skip/Abort dialog (unchanged) if the
+// file is somehow still locked once MaxWaitMs is exhausted.
+function WaitForUnlock(FileName: String; MaxWaitMs: Integer): Boolean;
+var
+  Elapsed, PollIntervalMs: Integer;
+begin
+  Result := True;
+  if not FileExists(FileName) then
+    Exit; // nothing to wait for -- fresh install, no prior file to unlock
+  PollIntervalMs := 500;
+  Elapsed := 0;
+  while IsFileLocked(FileName) do
+  begin
+    Sleep(PollIntervalMs);
+    Elapsed := Elapsed + PollIntervalMs;
+    if Elapsed >= MaxWaitMs then
+    begin
+      Result := False;
+      Exit;
+    end;
+  end;
+end;
+
 function StopServiceIfInstalled(ExeName, ServiceName: String): Boolean;
 var
   ResultCode: Integer;
@@ -294,22 +380,20 @@ begin
     // Exec/ewWaitUntilTerminated waiting for that CLI call to return does
     // NOT mean the service has actually reached SERVICE_STOPPED, let alone
     // that the underlying process has exited and released its exe file
-    // handle. A fixed 1s cushion here (this function's first version)
-    // was nowhere near enough and led to exactly the "DeleteFile failed,
-    // code 5" error this comment is now next to: measured directly against
-    // sylo/webapp/main.py's real shutdown path (SIGTERM sent to a running
-    // instance with one open /messages/stream live-tail connection, same
-    // code this service wrapper drives), full process exit took ~5.5
-    // seconds, bounded by that module's own `timeout_graceful_shutdown=5`
-    // uvicorn setting -- it does not hang forever, but 1 second was never
-    // going to be enough whenever a browser was left open on that page.
-    // Receiver/retention have no equivalent slow path (they just
-    // `await stop_event.wait()`, no open connections to drain) so they
-    // exit almost immediately regardless; webapp is the one that needs the
-    // margin. 10s comfortably covers the measured ~5.5s worst case with
-    // room to spare for the frozen PyInstaller exe's own teardown overhead,
-    // at the one-time cost of a few extra seconds during install/upgrade.
-    Sleep(10000);
+    // handle. See WaitForUnlock's comment above for why this polls instead
+    // of sleeping a fixed amount: measured directly on a real Windows
+    // machine, sylo-webapp.exe's owning process had already fully exited
+    // by the time the "DeleteFile failed, code 5" error this replaces
+    // still occurred -- a fixed Sleep, however long, can't bound a
+    // separate transient lock (most likely Defender's real-time scan)
+    // that isn't tied to process-exit timing at all. 30s per file is a
+    // generous cap, well above the ~5.5s worst-case graceful-shutdown time
+    // sylo/webapp/main.py's `timeout_graceful_shutdown=5` produces; if that
+    // cap is somehow still exceeded, Inno's own interactive Retry/Skip/Abort
+    // dialog during [Files] remains the fallback, unchanged.
+    WaitForUnlock(ExpandConstant('{app}') + '\sylo-receiver.exe', 30000);
+    WaitForUnlock(ExpandConstant('{app}') + '\sylo-webapp.exe', 30000);
+    WaitForUnlock(ExpandConstant('{app}') + '\sylo-retention.exe', 30000);
   end;
 end;
 
