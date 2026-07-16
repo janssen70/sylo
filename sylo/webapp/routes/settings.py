@@ -4,13 +4,13 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 
 from .. import appdb, auth
-from ..deps import get_config, get_session
+from ..deps import get_config, require_admin
 
 router = APIRouter()
 
 
 @router.get("/settings/retention", response_class=HTMLResponse)
-def retention_form(request: Request, session: auth.Session = Depends(get_session)):
+def retention_form(request: Request, session: auth.Session = Depends(require_admin)):
     config = get_config(request)
     retention_days = appdb.get_setting(config.app_db_path, "retention_days", "365")
     templates = request.app.state.templates
@@ -26,7 +26,7 @@ def retention_submit(
     request: Request,
     retention_days: str = Form(...),
     csrf_token: str = Form(...),
-    session: auth.Session = Depends(get_session),
+    session: auth.Session = Depends(require_admin),
 ):
     config = get_config(request)
     templates = request.app.state.templates

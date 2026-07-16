@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 
 from . import auth
 from .config import WebConfig
@@ -24,6 +24,13 @@ def get_session(request: Request) -> auth.Session:
     session = get_optional_session(request)
     if session is None:
         raise NotAuthenticated()
+    return session
+
+
+def require_admin(request: Request) -> auth.Session:
+    session = get_session(request)
+    if not session.is_admin:
+        raise HTTPException(status_code=403, detail="admin access required")
     return session
 
 

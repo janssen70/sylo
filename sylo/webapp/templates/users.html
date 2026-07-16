@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Users - sylo{% endblock %}
+{% block content %}
+<h1>Users</h1>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if revealed %}
+<div class="reveal-panel">
+  Password set for <strong>{{ revealed.username }}</strong>: <code id="revealed-password">{{ revealed.password }}</code>
+  <button type="button" class="copy-password-btn" data-copy-target="revealed-password">Copy</button>
+  <p class="hint">Shown once -- only the hash is stored. Copy it now if the user needs it.</p>
+</div>
+{% endif %}
+
+<table class="results">
+  <thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Created</th><th></th></tr></thead>
+  <tbody>
+    {% for u in users %}
+    <tr>
+      <td>{{ u.username }}</td>
+      <td>{{ u.role }}</td>
+      <td>{{ 'active' if u.is_active else 'deactivated' }}</td>
+      <td class="ts"><time datetime="{{ u.created_at }}">{{ u.created_at }}</time></td>
+      <td>
+        <form method="post" action="/settings/users/{{ u.id }}/reset-password" class="inline-form reset-password-form">
+          <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+          <input type="password" name="new_password" placeholder="new password" required>
+          <button type="button" class="generate-password-btn" data-target-input="new_password">Generate</button>
+          <button type="submit">Reset password</button>
+        </form>
+        {% if u.is_active %}
+        <form method="post" action="/settings/users/{{ u.id }}/deactivate" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+          <button type="submit">Deactivate</button>
+        </form>
+        {% else %}
+        <form method="post" action="/settings/users/{{ u.id }}/delete" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+          <button type="submit">Delete</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5">No users yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Add user</h2>
+<form method="post" action="/settings/users">
+  <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+  <label>Username <input type="text" name="username" required></label>
+  <label>Role
+    <select name="role">
+      <option value="viewer" selected>viewer</option>
+      <option value="admin">admin</option>
+    </select>
+  </label>
+  <label>Password <input type="password" name="password" required></label>
+  <button type="button" class="generate-password-btn" data-target-input="password">Generate</button>
+  <button type="submit">Add user</button>
+</form>
+{% endblock %}
+{% block scripts %}
+<script src="/static/userpanel.js"></script>
+{% endblock %}

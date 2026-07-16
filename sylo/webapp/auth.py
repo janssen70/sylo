@@ -41,7 +41,7 @@ def ensure_default_admin(config: WebConfig, initial_password: str | None = None)
     if not password:
         password = secrets.token_urlsafe(18)
         generated = password
-    appdb.create_user(config.app_db_path, "admin", hash_password(password))
+    appdb.create_user(config.app_db_path, "admin", hash_password(password), role="admin")
     return generated
 
 
@@ -56,7 +56,7 @@ def authenticate(config: WebConfig, username: str, password: str) -> int | None:
         # and wrong-password paths take comparable time.
         bcrypt.checkpw(password.encode("utf-8"), bcrypt.gensalt())
         return None
-    if verify_password(password, user["password_hash"]):
+    if verify_password(password, user["password_hash"]) and user["is_active"]:
         return user["id"]
     return None
 
@@ -67,6 +67,11 @@ class Session:
     user_id: int
     username: str
     csrf_token: str
+    role: str
+
+    @property
+    def is_admin(self) -> bool:
+        return self.role == "admin"
 
 
 def create_session(config: WebConfig, user_id: int) -> Session:
@@ -75,7 +80,7 @@ def create_session(config: WebConfig, user_id: int) -> Session:
     expires_at = (datetime.now(timezone.utc) + timedelta(seconds=config.session_ttl_seconds)).isoformat()
     appdb.create_session(config.app_db_path, token, user_id, csrf_token, expires_at)
     user = appdb.get_user_by_id(config.app_db_path, user_id)
-    return Session(token, user_id, user["username"], csrf_token)
+    return Session(token, user_id, user["username"], csrf_token, user["role"])
 
 
 def get_session(config: WebConfig, token: str | None) -> Session | None:
@@ -88,10 +93,13 @@ def get_session(config: WebConfig, token: str | None) -> Session | None:
         appdb.delete_session(config.app_db_path, token)
         return None
     user = appdb.get_user_by_id(config.app_db_path, row["user_id"])
-    if user is None:
+    if user is None or not user["is_active"]:
+        # Deactivation must revoke access immediately, mid-session -- not
+        # just block future logins -- so a fresh is_active check runs here
+        # on every request, not only at login time.
         appdb.delete_session(config.app_db_path, token)
         return None
-    return Session(token, row["user_id"], user["username"], row["csrf_token"])
+    return Session(token, row["user_id"], user["username"], row["csrf_token"], user["role"])
 
 
 def destroy_session(config: WebConfig, token: str) -> None:

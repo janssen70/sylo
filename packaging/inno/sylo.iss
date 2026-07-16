@@ -113,6 +113,7 @@ Filename: "{app}\sylo-retention.exe"; Parameters: "remove"; Flags: runhidden wai
 var
   AdminPasswordPage: TInputQueryWizardPage;
   PortPage: TInputQueryWizardPage;
+  RemoteAccessPage: TInputOptionWizardPage;
 
 function DataRawDir(): String;
 begin
@@ -185,6 +186,11 @@ begin
   Result := ReadExistingEnvValue('SYLO_WEB_PORT=', '{#MyDefaultPort}');
 end;
 
+function ReadExistingWebBindHost(): String;
+begin
+  Result := ReadExistingEnvValue('SYLO_WEB_BIND_HOST=', '127.0.0.1');
+end;
+
 // Without this, AdminPasswordPage.Values[0] stays blank on every upgrade
 // (the page is skipped, so nothing else ever populates it) -- CurStepChanged
 // then treats that blank as "no password wanted" and writes a shorter
@@ -231,6 +237,29 @@ begin
     PortPage.Values[0] := ReadExistingWebPort()
   else
     PortPage.Values[0] := '{#MyDefaultPort}';
+
+  // Plan section 10: same single install, but let viewers log in from other
+  // machines on the network. Off by default -- an install shouldn't silently
+  // become network-exposed; the deployer opts in explicitly. Deliberately
+  // does not add a Windows Firewall rule (see doc/open_issues.md) -- Windows
+  // will still prompt on the first inbound connection, or the deployer can
+  // add a rule by hand.
+  RemoteAccessPage := CreateInputOptionPage(
+    PortPage.ID,
+    'Remote Access',
+    'Allow other computers on the network to view Sylo?',
+    'By default the web UI only accepts connections from this machine (127.0.0.1). ' +
+    'Checking this box makes it listen on all network interfaces instead (0.0.0.0), so ' +
+    'other computers on your network can log in too. This traffic is plain HTTP, not ' +
+    'encrypted -- only enable this on a network you trust. No Windows Firewall rule is ' +
+    'added automatically.',
+    False, False
+  );
+  RemoteAccessPage.Add('Allow remote viewers (bind to 0.0.0.0 instead of 127.0.0.1 only)');
+  if IsUpgrade() then
+    RemoteAccessPage.Values[0] := ReadExistingWebBindHost() <> '127.0.0.1'
+  else
+    RemoteAccessPage.Values[0] := False;
 end;
 
 // Upgrading an existing install: the admin account already exists and the
@@ -241,7 +270,9 @@ end;
 // specifically per the user's ask not to be prompted again on upgrade.
 function ShouldSkipPage(PageID: Integer): Boolean;
 begin
-  Result := IsUpgrade() and ((PageID = AdminPasswordPage.ID) or (PageID = PortPage.ID));
+  Result := IsUpgrade() and (
+    (PageID = AdminPasswordPage.ID) or (PageID = PortPage.ID) or (PageID = RemoteAccessPage.ID)
+  );
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -456,11 +487,15 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   ReceiverEnv, WebappEnv, RetentionEnv: array of String;
-  AdminPassword: String;
+  AdminPassword, WebBindHost: String;
 begin
   if CurStep = ssPostInstall then
   begin
     AdminPassword := AdminPasswordPage.Values[0];
+    if RemoteAccessPage.Values[0] then
+      WebBindHost := '0.0.0.0'
+    else
+      WebBindHost := '127.0.0.1';
 
     SetArrayLength(ReceiverEnv, 2);
     ReceiverEnv[0] := 'SYLO_DATA_DIR=' + DataRawDir();
@@ -469,14 +504,15 @@ begin
 
     if AdminPassword <> '' then
     begin
-      SetArrayLength(WebappEnv, 4);
-      WebappEnv[3] := 'SYLO_ADMIN_PASSWORD=' + AdminPassword;
+      SetArrayLength(WebappEnv, 5);
+      WebappEnv[4] := 'SYLO_ADMIN_PASSWORD=' + AdminPassword;
     end
     else
-      SetArrayLength(WebappEnv, 3);
+      SetArrayLength(WebappEnv, 4);
     WebappEnv[0] := 'SYLO_APP_DB=' + AppDbPath();
     WebappEnv[1] := 'SYLO_INDEX_DIR=' + DataIndexDir();
     WebappEnv[2] := 'SYLO_WEB_PORT=' + PortPage.Values[0];
+    WebappEnv[3] := 'SYLO_WEB_BIND_HOST=' + WebBindHost;
     InstallService('sylo-webapp.exe', 'SyloWebapp', WebappEnv);
 
     SetArrayLength(RetentionEnv, 3);

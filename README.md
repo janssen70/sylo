@@ -67,9 +67,9 @@ iscc packaging\inno\sylo.iss
 ```
 
 Build/run-verified on a real Windows machine: compiles clean and a full
-install registers, configures, and starts all three services. Upgrade
-(re-running the installer over an existing install) and the uninstall
-keep/delete-data prompt are still untested -- see `doc/sylo-plan.md` section 5.
+install registers, configures, and starts all three services, and an
+upgrade (re-running the installer over an existing install) completes
+cleanly too.
 
 ### Linux
 
@@ -85,8 +85,8 @@ pip install -e ".[dev]"   # add pytest etc.; drop the extra for a runtime-only i
 pytest -q                 # optional: confirm the test suite passes
 ```
 
-**A real install**, running as systemd services (see `doc/sylo-plan.md`
-section 8): `sudo make install`. This is not a `.deb`/`.rpm`/Docker image --
+**A real install**, running as systemd services: `sudo make install`. This
+is not a `.deb`/`.rpm`/Docker image --
 it builds a venv under `/opt/sylo` from this source tree (via `pip install
 .`, no `-e`, so the clone directory is disposable afterward), creates a
 system `sylo` user, and installs `sylo-receiver.service`,

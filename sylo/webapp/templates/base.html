@@ -14,7 +14,11 @@
   <nav class="topnav">
     <a href="/messages">Messages</a>
     <a href="/devices">Devices</a>
+    {% if session.is_admin %}
     <a href="/settings/retention">Retention</a>
+    <a href="/settings/users">Users</a>
+    {% endif %}
+    <a href="/account/password">Account</a>
     <a href="/help">Help</a>
     <span class="spacer"></span>
     <span class="user">{{ session.username }}</span>
@@ -35,5 +39,6 @@
   <main>
     {% block content %}{% endblock %}
   </main>
+  {% block scripts %}{% endblock %}
 </body>
 </html>

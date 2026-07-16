@@ -19,6 +19,7 @@ from .routes import health as health_routes
 from .routes import help as help_routes
 from .routes import messages as messages_routes
 from .routes import settings as settings_routes
+from .routes import users as users_routes
 
 logger = logging.getLogger("sylo.webapp")
 
@@ -69,6 +70,7 @@ def create_app(config: WebConfig, initial_admin_password: str | None = None) -> 
     app.include_router(messages_routes.router)
     app.include_router(devices_routes.router)
     app.include_router(settings_routes.router)
+    app.include_router(users_routes.router)
     app.include_router(help_routes.router)
 
     @app.get("/")

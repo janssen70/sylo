@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from .. import auth
+from .. import appdb, auth
 from ..deps import client_ip, get_config, get_optional_session, get_session
 
 router = APIRouter()
@@ -73,3 +73,48 @@ def logout(
     response = RedirectResponse(url="/login", status_code=303)
     response.delete_cookie(config.session_cookie_name)
     return response
+
+
+@router.get("/account/password", response_class=HTMLResponse)
+def account_password_form(request: Request, session: auth.Session = Depends(get_session)):
+    templates = request.app.state.templates
+    return templates.TemplateResponse(request, "account.html", {"session": session, "error": None, "saved": False})
+
+
+@router.post("/account/password", response_class=HTMLResponse)
+def account_password_submit(
+    request: Request,
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    csrf_token: str = Form(...),
+    session: auth.Session = Depends(get_session),
+):
+    config = get_config(request)
+    templates = request.app.state.templates
+
+    if not auth.verify_csrf(session, csrf_token):
+        return templates.TemplateResponse(
+            request,
+            "account.html",
+            {"session": session, "error": "Invalid or expired form, please retry.", "saved": False},
+            status_code=403,
+        )
+
+    if auth.authenticate(config, session.username, current_password) is None:
+        return templates.TemplateResponse(
+            request,
+            "account.html",
+            {"session": session, "error": "Current password is incorrect.", "saved": False},
+            status_code=401,
+        )
+
+    if not new_password:
+        return templates.TemplateResponse(
+            request,
+            "account.html",
+            {"session": session, "error": "New password is required.", "saved": False},
+            status_code=400,
+        )
+
+    appdb.set_user_password(config.app_db_path, session.user_id, auth.hash_password(new_password))
+    return templates.TemplateResponse(request, "account.html", {"session": session, "error": None, "saved": True})

@@ -73,6 +73,16 @@ td.ts { white-space: nowrap; font-variant-numeric: tabular-nums; color: #9aa4b2;
 .success { color: #8fe19a; }
 .hint { color: #9aa4b2; font-size: 0.85rem; }
 
+.reveal-panel {
+  max-width: 480px;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  background: #17251c;
+  border: 1px solid #2c4a34;
+  border-radius: 6px;
+}
+.reveal-panel code { background: #0f1115; padding: 0.15rem 0.4rem; border-radius: 3px; }
+
 .health-banner {
   padding: 0.6rem 1.5rem;
   background: #3a2020;

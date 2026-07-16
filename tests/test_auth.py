@@ -115,3 +115,46 @@ def test_login_rate_limiter_keys_are_independent():
         limiter.record_failure("1.1.1.1")
     assert limiter.is_locked("1.1.1.1")
     assert not limiter.is_locked("2.2.2.2")
+
+
+def test_ensure_default_admin_grants_admin_role(tmp_path):
+    config = make_config(tmp_path)
+    appdb.init_db(config.app_db_path)
+    auth.ensure_default_admin(config, initial_password="pw")
+    uid = auth.authenticate(config, "admin", "pw")
+    session = auth.create_session(config, uid)
+    assert session.role == "admin"
+    assert session.is_admin
+
+
+def test_viewer_session_is_not_admin(tmp_path):
+    config = make_config(tmp_path)
+    appdb.init_db(config.app_db_path)
+    uid = appdb.create_user(config.app_db_path, "alice", auth.hash_password("pw"), role="viewer")
+    session = auth.create_session(config, uid)
+    assert session.role == "viewer"
+    assert not session.is_admin
+
+
+def test_get_session_revokes_deactivated_user(tmp_path):
+    config = make_config(tmp_path)
+    appdb.init_db(config.app_db_path)
+    uid = appdb.create_user(config.app_db_path, "alice", auth.hash_password("pw"), role="viewer")
+    session = auth.create_session(config, uid)
+    assert auth.get_session(config, session.token) is not None
+
+    appdb.set_user_active(config.app_db_path, uid, False)
+    assert auth.get_session(config, session.token) is None
+    # the dead session should also be purged, not just rejected
+    assert appdb.get_session(config.app_db_path, session.token) is None
+
+
+def test_authenticate_rejects_deactivated_user(tmp_path):
+    config = make_config(tmp_path)
+    appdb.init_db(config.app_db_path)
+    appdb.create_user(config.app_db_path, "alice", auth.hash_password("pw"), role="viewer")
+    assert auth.authenticate(config, "alice", "pw") is not None
+
+    uid = appdb.get_user_by_username(config.app_db_path, "alice")["id"]
+    appdb.set_user_active(config.app_db_path, uid, False)
+    assert auth.authenticate(config, "alice", "pw") is None

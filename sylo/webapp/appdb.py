@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY,
     username TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'viewer',
+    is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL
 );
 
@@ -71,14 +73,53 @@ def count_users(app_db_path: Path) -> int:
         return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
 
 
-def create_user(app_db_path: Path, username: str, password_hash: str) -> int:
+def create_user(app_db_path: Path, username: str, password_hash: str, role: str = "viewer") -> int:
     with connect(app_db_path) as conn:
         cursor = conn.execute(
-            "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
-            (username, password_hash, datetime.now(timezone.utc).isoformat()),
+            "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
+            (username, password_hash, role, datetime.now(timezone.utc).isoformat()),
         )
         conn.commit()
         return cursor.lastrowid
+
+
+def list_users(app_db_path: Path) -> list[sqlite3.Row]:
+    with connect(app_db_path) as conn:
+        return conn.execute("SELECT * FROM users ORDER BY username").fetchall()
+
+
+def set_user_password(app_db_path: Path, user_id: int, password_hash: str) -> None:
+    with connect(app_db_path) as conn:
+        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id))
+        conn.commit()
+
+
+def set_user_active(app_db_path: Path, user_id: int, active: bool) -> None:
+    with connect(app_db_path) as conn:
+        conn.execute("UPDATE users SET is_active = ? WHERE id = ?", (1 if active else 0, user_id))
+        conn.commit()
+
+
+def delete_sessions_for_user(app_db_path: Path, user_id: int) -> None:
+    with connect(app_db_path) as conn:
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+        conn.commit()
+
+
+def delete_user(app_db_path: Path, user_id: int) -> None:
+    # Sessions carry a FK to users(id) (PRAGMA foreign_keys=ON), so any
+    # remaining session row for this user must go first.
+    with connect(app_db_path) as conn:
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        conn.commit()
+
+
+def count_active_admins(app_db_path: Path) -> int:
+    with connect(app_db_path) as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM users WHERE role = 'admin' AND is_active = 1"
+        ).fetchone()[0]
 
 
 def get_user_by_username(app_db_path: Path, username: str) -> sqlite3.Row | None:
