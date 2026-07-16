@@ -10,7 +10,9 @@ router = APIRouter()
 
 
 @router.get("/login", response_class=HTMLResponse)
-def login_form(request: Request, next: str = "/messages"):
+def login_form(request: Request, next: str | None = None):
+    config = get_config(request)
+    next = next or f"{config.url_prefix}/messages"
     if get_optional_session(request) is not None:
         return RedirectResponse(url=next, status_code=303)
     templates = request.app.state.templates
@@ -22,9 +24,10 @@ def login_submit(
     request: Request,
     username: str = Form(...),
     password: str = Form(...),
-    next: str = Form("/messages"),
+    next: str | None = Form(None),
 ):
     config = get_config(request)
+    next = next or f"{config.url_prefix}/messages"
     limiter = request.app.state.rate_limiter
     ip = client_ip(request)
     templates = request.app.state.templates
@@ -49,13 +52,14 @@ def login_submit(
 
     limiter.record_success(ip)
     session = auth.create_session(config, user_id)
-    response = RedirectResponse(url=next or "/messages", status_code=303)
+    response = RedirectResponse(url=next, status_code=303)
     response.set_cookie(
         config.session_cookie_name,
         session.token,
         max_age=config.session_ttl_seconds,
         httponly=True,
         samesite="lax",
+        path=config.url_prefix,
     )
     return response
 
@@ -70,8 +74,8 @@ def logout(
     if not auth.verify_csrf(session, csrf_token):
         raise HTTPException(status_code=403, detail="invalid csrf token")
     auth.destroy_session(config, session.token)
-    response = RedirectResponse(url="/login", status_code=303)
-    response.delete_cookie(config.session_cookie_name)
+    response = RedirectResponse(url=f"{config.url_prefix}/login", status_code=303)
+    response.delete_cookie(config.session_cookie_name, path=config.url_prefix)
     return response
 
 

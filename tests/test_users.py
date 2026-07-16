@@ -6,6 +6,9 @@ from sylo.webapp import appdb
 from sylo.webapp.app import create_app
 from sylo.webapp.config import WebConfig
 
+# WebConfig.url_prefix's fixed default -- see sylo/webapp/config.py.
+PREFIX = "/sylo"
+
 
 def make_client(tmp_path, **overrides) -> TestClient:
     defaults = dict(
@@ -22,13 +25,13 @@ def make_client(tmp_path, **overrides) -> TestClient:
 
 
 def login(client: TestClient, username: str = "admin", password: str = "testpass123") -> None:
-    r = client.post("/login", data={"username": username, "password": password})
+    r = client.post(f"{PREFIX}/login", data={"username": username, "password": password})
     assert r.status_code == 200
 
 
 def logout(client: TestClient) -> None:
-    csrf = csrf_token(client, "/messages")
-    r = client.post("/logout", data={"csrf_token": csrf})
+    csrf = csrf_token(client, f"{PREFIX}/messages")
+    r = client.post(f"{PREFIX}/logout", data={"csrf_token": csrf})
     assert r.status_code == 200
 
 
@@ -40,9 +43,9 @@ def csrf_token(client: TestClient, page_url: str) -> str:
 
 
 def create_viewer(client: TestClient, username="viewer1", password="viewerpass123", role="viewer"):
-    csrf = csrf_token(client, "/settings/users")
+    csrf = csrf_token(client, f"{PREFIX}/settings/users")
     r = client.post(
-        "/settings/users",
+        f"{PREFIX}/settings/users",
         data={"username": username, "role": role, "password": password, "csrf_token": csrf},
     )
     assert r.status_code == 200, r.text
@@ -66,17 +69,17 @@ def test_viewer_cannot_access_admin_routes(tmp_path):
         logout(client)
         login(client, username, password)
 
-        assert client.get("/messages").status_code == 200
-        assert client.get("/settings/users").status_code == 403
-        assert client.get("/settings/retention").status_code == 403
+        assert client.get(f"{PREFIX}/messages").status_code == 200
+        assert client.get(f"{PREFIX}/settings/users").status_code == 403
+        assert client.get(f"{PREFIX}/settings/retention").status_code == 403
 
 
 def test_duplicate_username_rejected(tmp_path):
     with make_client(tmp_path) as client:
         login(client)
-        csrf = csrf_token(client, "/settings/users")
+        csrf = csrf_token(client, f"{PREFIX}/settings/users")
         r = client.post(
-            "/settings/users",
+            f"{PREFIX}/settings/users",
             data={"username": "admin", "role": "viewer", "password": "x", "csrf_token": csrf},
         )
         assert r.status_code == 400
@@ -88,24 +91,24 @@ def test_deactivate_kills_existing_session(tmp_path):
         login(admin_client)
         username, password = create_viewer(admin_client)
         login(viewer_client, username, password)
-        assert viewer_client.get("/messages").status_code == 200
+        assert viewer_client.get(f"{PREFIX}/messages").status_code == 200
 
         user_id = appdb.get_user_by_username(tmp_path / "app.sqlite3", username)["id"]
-        csrf = csrf_token(admin_client, "/settings/users")
-        r = admin_client.post(f"/settings/users/{user_id}/deactivate", data={"csrf_token": csrf})
+        csrf = csrf_token(admin_client, f"{PREFIX}/settings/users")
+        r = admin_client.post(f"{PREFIX}/settings/users/{user_id}/deactivate", data={"csrf_token": csrf})
         assert r.status_code == 200
 
-        r = viewer_client.get("/messages", follow_redirects=False)
+        r = viewer_client.get(f"{PREFIX}/messages", follow_redirects=False)
         assert r.status_code == 303
-        assert r.headers["location"].startswith("/login")
+        assert r.headers["location"].startswith(f"{PREFIX}/login")
 
 
 def test_cannot_deactivate_last_admin(tmp_path):
     with make_client(tmp_path) as client:
         login(client)
         user_id = appdb.get_user_by_username(tmp_path / "app.sqlite3", "admin")["id"]
-        csrf = csrf_token(client, "/settings/users")
-        r = client.post(f"/settings/users/{user_id}/deactivate", data={"csrf_token": csrf})
+        csrf = csrf_token(client, f"{PREFIX}/settings/users")
+        r = client.post(f"{PREFIX}/settings/users/{user_id}/deactivate", data={"csrf_token": csrf})
         assert r.status_code == 400
         assert "last remaining admin" in r.text
 
@@ -115,14 +118,14 @@ def test_delete_requires_deactivation_first(tmp_path):
         login(client)
         username, _ = create_viewer(client)
         user_id = appdb.get_user_by_username(tmp_path / "app.sqlite3", username)["id"]
-        csrf = csrf_token(client, "/settings/users")
+        csrf = csrf_token(client, f"{PREFIX}/settings/users")
 
-        r = client.post(f"/settings/users/{user_id}/delete", data={"csrf_token": csrf})
+        r = client.post(f"{PREFIX}/settings/users/{user_id}/delete", data={"csrf_token": csrf})
         assert r.status_code == 400
         assert "Deactivate a user" in r.text
 
-        client.post(f"/settings/users/{user_id}/deactivate", data={"csrf_token": csrf})
-        r = client.post(f"/settings/users/{user_id}/delete", data={"csrf_token": csrf}, follow_redirects=False)
+        client.post(f"{PREFIX}/settings/users/{user_id}/deactivate", data={"csrf_token": csrf})
+        r = client.post(f"{PREFIX}/settings/users/{user_id}/delete", data={"csrf_token": csrf}, follow_redirects=False)
         assert r.status_code == 303
         assert appdb.get_user_by_id(tmp_path / "app.sqlite3", user_id) is None
 
@@ -132,9 +135,9 @@ def test_reset_password_reveals_new_password_once(tmp_path):
         login(client)
         username, _ = create_viewer(client)
         user_id = appdb.get_user_by_username(tmp_path / "app.sqlite3", username)["id"]
-        csrf = csrf_token(client, "/settings/users")
+        csrf = csrf_token(client, f"{PREFIX}/settings/users")
         r = client.post(
-            f"/settings/users/{user_id}/reset-password",
+            f"{PREFIX}/settings/users/{user_id}/reset-password",
             data={"new_password": "newpassword456", "csrf_token": csrf},
         )
         assert r.status_code == 200
@@ -147,9 +150,9 @@ def test_reset_password_reveals_new_password_once(tmp_path):
 def test_self_service_password_change(tmp_path):
     with make_client(tmp_path) as client:
         login(client)
-        csrf = csrf_token(client, "/account/password")
+        csrf = csrf_token(client, f"{PREFIX}/account/password")
         r = client.post(
-            "/account/password",
+            f"{PREFIX}/account/password",
             data={"current_password": "testpass123", "new_password": "newadminpw789", "csrf_token": csrf},
         )
         assert r.status_code == 200
@@ -162,9 +165,9 @@ def test_self_service_password_change(tmp_path):
 def test_self_service_password_change_rejects_wrong_current_password(tmp_path):
     with make_client(tmp_path) as client:
         login(client)
-        csrf = csrf_token(client, "/account/password")
+        csrf = csrf_token(client, f"{PREFIX}/account/password")
         r = client.post(
-            "/account/password",
+            f"{PREFIX}/account/password",
             data={"current_password": "wrongpw", "new_password": "newadminpw789", "csrf_token": csrf},
         )
         assert r.status_code == 401

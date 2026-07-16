@@ -34,6 +34,14 @@ class WebConfig:
     default_page_size: int = 50
     max_page_size: int = 500
 
+    # Fixed mount point for reverse-proxy deployment (e.g. nginx forwarding
+    # a location block's full, untouched request line to this backend --
+    # not stripped/rewritten, so the app must own routes/links at this same
+    # path itself). Deliberately not env-configurable: one fixed deployment,
+    # one fixed prefix. Change this default if a different mount point is
+    # ever needed.
+    url_prefix: str = "/sylo"
+
     # How many of the most recent monthly index DBs the devices list and
     # default (no time range given) message search scan -- bounds a single
     # request to a small, predictable number of SQLite files to open.

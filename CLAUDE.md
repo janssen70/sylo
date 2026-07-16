@@ -70,6 +70,16 @@ Linux they run as plain processes under systemd units in `deploy/systemd/`.
   `appdb.SCHEMA`'s `CREATE TABLE IF NOT EXISTS`. Pre-v1, so existing
   installs are expected to be purged/reinstalled rather than migrated in
   place; revisit this once that's no longer true.
+- The app always serves itself under a fixed mount point, `WebConfig.url_prefix`
+  (`/sylo`, not env-configurable — see the comment above that field). Every
+  route lives there (`app.py` wraps all routers in one `APIRouter(prefix=...)`),
+  and every template/redirect/cookie path is baked with it too — this is for
+  reverse-proxying behind nginx with `proxy_pass` pointed at the backend with
+  no URI (so nginx forwards the request line untouched; sylo's own routes
+  must already match it). Bare `/` and bare `/healthz` are also still
+  registered unprefixed, for local/direct access and monitoring. Any new
+  hardcoded absolute path in a route or template is almost certainly a bug —
+  it needs `{{ url_prefix }}` (templates) or `config.url_prefix` (Python).
 
 ## Packaging
 

@@ -4,7 +4,7 @@
 <h1>Retention settings</h1>
 {% if saved %}<p class="success">Saved.</p>{% endif %}
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
-<form method="post" action="/settings/retention">
+<form method="post" action="{{ url_prefix }}/settings/retention">
   <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
   <label>Retention (days) <input type="number" name="retention_days" min="1" value="{{ retention_days }}"></label>
   <button type="submit">Save</button>

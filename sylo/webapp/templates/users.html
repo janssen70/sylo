@@ -21,19 +21,19 @@
       <td>{{ 'active' if u.is_active else 'deactivated' }}</td>
       <td class="ts"><time datetime="{{ u.created_at }}">{{ u.created_at }}</time></td>
       <td>
-        <form method="post" action="/settings/users/{{ u.id }}/reset-password" class="inline-form reset-password-form">
+        <form method="post" action="{{ url_prefix }}/settings/users/{{ u.id }}/reset-password" class="inline-form reset-password-form">
           <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
           <input type="password" name="new_password" placeholder="new password" required>
           <button type="button" class="generate-password-btn" data-target-input="new_password">Generate</button>
           <button type="submit">Reset password</button>
         </form>
         {% if u.is_active %}
-        <form method="post" action="/settings/users/{{ u.id }}/deactivate" class="inline-form">
+        <form method="post" action="{{ url_prefix }}/settings/users/{{ u.id }}/deactivate" class="inline-form">
           <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
           <button type="submit">Deactivate</button>
         </form>
         {% else %}
-        <form method="post" action="/settings/users/{{ u.id }}/delete" class="inline-form">
+        <form method="post" action="{{ url_prefix }}/settings/users/{{ u.id }}/delete" class="inline-form">
           <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
           <button type="submit">Delete</button>
         </form>
@@ -47,7 +47,7 @@
 </table>
 
 <h2>Add user</h2>
-<form method="post" action="/settings/users">
+<form method="post" action="{{ url_prefix }}/settings/users">
   <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
   <label>Username <input type="text" name="username" required></label>
   <label>Role
@@ -62,5 +62,5 @@
 </form>
 {% endblock %}
 {% block scripts %}
-<script src="/static/userpanel.js"></script>
+<script src="{{ url_prefix }}/static/userpanel.js"></script>
 {% endblock %}

@@ -119,10 +119,10 @@ def deactivate_user(
     if user_id == session.user_id:
         # The acting admin just deactivated themselves -- their own session
         # was just deleted above, so there's nothing left to redirect back to.
-        response = RedirectResponse(url="/login", status_code=303)
-        response.delete_cookie(config.session_cookie_name)
+        response = RedirectResponse(url=f"{config.url_prefix}/login", status_code=303)
+        response.delete_cookie(config.session_cookie_name, path=config.url_prefix)
         return response
-    return RedirectResponse(url="/settings/users", status_code=303)
+    return RedirectResponse(url=f"{config.url_prefix}/settings/users", status_code=303)
 
 
 @router.post("/settings/users/{user_id}/delete")
@@ -146,4 +146,4 @@ def delete_user(
         )
 
     appdb.delete_user(config.app_db_path, user_id)
-    return RedirectResponse(url="/settings/users", status_code=303)
+    return RedirectResponse(url=f"{config.url_prefix}/settings/users", status_code=303)

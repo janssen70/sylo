@@ -138,9 +138,9 @@ def test_live_tail_end_to_end_over_real_socket(tmp_path):
             raise RuntimeError("server did not come up in time")
 
         client = httpx.Client(base_url=base)
-        client.post("/login", data={"username": "admin", "password": "testpass123"})
+        client.post("/sylo/login", data={"username": "admin", "password": "testpass123"})
 
-        with client.stream("GET", "/messages/stream", timeout=10) as r:
+        with client.stream("GET", "/sylo/messages/stream", timeout=10) as r:
             assert r.status_code == 200
             lines = r.iter_lines()
             next(lines)  # first keep-alive: confirms the seed poll ran

@@ -17,7 +17,7 @@
 
 <section class="help-section">
   <h2>Searching messages</h2>
-  <p>The <a href="/messages">Messages</a> page combines several filters, all of which can be used together:</p>
+  <p>The <a href="{{ url_prefix }}/messages">Messages</a> page combines several filters, all of which can be used together:</p>
   <ul>
     <li>
       <strong>Host</strong> — select one or more known devices (shown as "hostname (ip)").
@@ -57,7 +57,7 @@
 <section class="help-section">
   <h2>Devices</h2>
   <p>
-    The <a href="/devices">Devices</a> page lists every device that has sent messages,
+    The <a href="{{ url_prefix }}/devices">Devices</a> page lists every device that has sent messages,
     with its hostname, source IP, last-seen time, and message count.
   </p>
 </section>
@@ -65,7 +65,7 @@
 <section class="help-section">
   <h2>Retention</h2>
   <p>
-    The <a href="/settings/retention">Retention</a> page controls how many days of
+    The <a href="{{ url_prefix }}/settings/retention">Retention</a> page controls how many days of
     messages are kept (365 by default). Once a month's messages fall entirely
     outside the retention window, both the indexed data and the raw log files for
     that month are deleted automatically; the current month is never deleted.

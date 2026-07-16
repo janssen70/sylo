@@ -20,7 +20,7 @@
 
 {% if has_more %}
 <button
-  hx-get="/messages/results"
+  hx-get="{{ url_prefix }}/messages/results"
   hx-include="#search-form"
   hx-vals='{"offset": {{ offset + limit }}}'
   hx-target="#results"

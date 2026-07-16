@@ -207,8 +207,28 @@ instead, scoped to just the receiver service.)
 Then, on any platform, visit `http://127.0.0.1:8514` (or the port you
 set `SYLO_WEB_PORT` to) and log in as `admin`
 with whichever password you set (or the one that was logged, if you didn't
-set one).
+set one). The webapp always serves itself under `/sylo` (`http://127.0.0.1:8514/sylo/...`);
+visiting the bare host/port redirects there automatically, so this isn't
+something you need to type yourself for direct/local access.
 
+### Reverse proxy / sub-path deployment
+
+The webapp's own routes, redirects, and asset links are all fixed under
+`/sylo` (`sylo/webapp/config.py`'s `url_prefix`) rather than the domain
+root, so it can be reverse-proxied under a sub-path of an existing domain
+without path rewriting. This matches an nginx `proxy_pass` with no URI in
+the target, which forwards the request line untouched:
+
+```nginx
+location /sylo/ {
+    proxy_set_header Host $http_host;
+    proxy_pass http://127.0.0.1:8514;
+}
+```
+
+Since nginx isn't stripping or rewriting anything here, sylo's own routes
+already living at `/sylo/...` is what makes this work — no other nginx
+configuration is needed for sylo itself.
 
 ## Troubleshooting
 In case port 514 is already taken or blocked, the syslog recorder can't

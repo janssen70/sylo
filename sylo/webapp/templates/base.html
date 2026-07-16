@@ -4,25 +4,25 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}sylo{% endblock %}</title>
-  <link rel="stylesheet" href="/static/style.css">
-  <script src="/static/htmx.min.js"></script>
-  <script src="/static/htmx-sse.min.js"></script>
-  <script src="/static/localtime.js"></script>
+  <link rel="stylesheet" href="{{ url_prefix }}/static/style.css">
+  <script src="{{ url_prefix }}/static/htmx.min.js"></script>
+  <script src="{{ url_prefix }}/static/htmx-sse.min.js"></script>
+  <script src="{{ url_prefix }}/static/localtime.js"></script>
 </head>
 <body>
   {% if session %}
   <nav class="topnav">
-    <a href="/messages">Messages</a>
-    <a href="/devices">Devices</a>
+    <a href="{{ url_prefix }}/messages">Messages</a>
+    <a href="{{ url_prefix }}/devices">Devices</a>
     {% if session.is_admin %}
-    <a href="/settings/retention">Retention</a>
-    <a href="/settings/users">Users</a>
+    <a href="{{ url_prefix }}/settings/retention">Retention</a>
+    <a href="{{ url_prefix }}/settings/users">Users</a>
     {% endif %}
-    <a href="/account/password">Account</a>
-    <a href="/help">Help</a>
+    <a href="{{ url_prefix }}/account/password">Account</a>
+    <a href="{{ url_prefix }}/help">Help</a>
     <span class="spacer"></span>
     <span class="user">{{ session.username }}</span>
-    <form method="post" action="/logout" class="inline-form">
+    <form method="post" action="{{ url_prefix }}/logout" class="inline-form">
       <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
       <button type="submit">Log out</button>
     </form>
