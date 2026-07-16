@@ -23,7 +23,6 @@ import win32event
 import win32service
 import win32serviceutil
 
-from .config import RetentionConfig
 from .main import run
 
 logger = logging.getLogger("sylo.retention.winservice")
@@ -61,7 +60,13 @@ class SyloRetentionService(win32serviceutil.ServiceFramework):
         asyncio.set_event_loop(self._loop)
         self._stop_event = asyncio.Event()
         try:
-            self._loop.run_until_complete(run(RetentionConfig.from_env(), stop_event=self._stop_event))
+            # config is intentionally left unset here -- run() now loads it
+            # itself, inside its own per-pass try/except, so a bad/transient
+            # RetentionConfig.from_env() can never raise from this line and
+            # take the service down before the loop's own retry logic gets a
+            # chance to run (see main.py's run() docstring for the incident
+            # that prompted this).
+            self._loop.run_until_complete(run(stop_event=self._stop_event))
         except Exception:
             logger.exception("retention service crashed")
             raise

@@ -6,23 +6,22 @@ text files and indexes them into SQLite for fast search. A local web UI
 lets you browse/search history, tail messages live, manage retention, and
 see which devices are reporting in.
 
-
 It is intended for monitoring edge devices in small-scale deployments
 where a full-fledged and IT-heavy syslog solution would introduce more problems
 than it solves.
+
+Some more information and Windows installer binary can be found [here](https://philea.my-system.nl/pages/sylo).
 
 It's made up of three independent processes, each of which can be started,
 stopped, and restarted without affecting the others:
 
 - **Receiver** (`sylo.receiver`) — listens on UDP/TCP 514, writes raw
-  messages to daily per-device text files, and feeds an embedded indexer
-  that maintains a monthly SQLite index (with full-text search).
+  messages to daily per-device text files, and keeps a searchable index.
 - **Webapp** (`sylo.webapp`) — FastAPI + htmx UI on `127.0.0.1:8514` by
   default (configurable via `SYLO_WEB_PORT`): message browser/search, live
-  tail (SSE), retention settings, device list. Only ever reads the SQLite
-  index, never the raw text files.
+  tail (SSE), retention settings, device list.
 - **Retention manager** (`sylo.retention`) — a daily background job that
-  drops whole monthly partitions (index DB + matching raw files) once
+  drops whole monthly partitions once
   they're older than the configured retention window.
 
 ## Building
@@ -63,7 +62,7 @@ The next step -- compiling `packaging\inno\sylo.iss` with Inno Setup's
 `ISCC.exe` into a single `sylo-setup.exe` installer:
 
 ```powershell
-iscc packaging\inno\sylo.iss
+"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging\inno\sylo.iss
 ```
 
 Build/run-verified on a real Windows machine: compiles clean and a full
@@ -85,8 +84,7 @@ pip install -e ".[dev]"   # add pytest etc.; drop the extra for a runtime-only i
 pytest -q                 # optional: confirm the test suite passes
 ```
 
-**A real install**, running as systemd services: `sudo make install`. This
-is not a `.deb`/`.rpm`/Docker image --
+**A real install**, running as systemd services: `sudo make install`. This is not a `.deb`/`.rpm`/Docker image --
 it builds a venv under `/opt/sylo` from this source tree (via `pip install
 .`, no `-e`, so the clone directory is disposable afterward), creates a
 system `sylo` user, and installs `sylo-receiver.service`,
@@ -109,7 +107,7 @@ with the `sylo` user, for a fully clean removal.
 
 ## Setup
 
-Whichever platform you're on, all three processes are configured entirely
+Ob both platforms all three processes are configured entirely
 through environment variables (no config file). The ones that matter for a
 first run:
 
@@ -206,7 +204,7 @@ run by that same venv's Python gets it too — fine for a throwaway dev venv,
 which is why the real install above uses per-unit `AmbientCapabilities`
 instead, scoped to just the receiver service.)
 
-Then, on any platform, visit `http://127.0.0.1:8514` (or whichever port you
+Then, on any platform, visit `http://127.0.0.1:8514` (or the port you
 set `SYLO_WEB_PORT` to) and log in as `admin`
 with whichever password you set (or the one that was logged, if you didn't
 set one).
@@ -214,11 +212,12 @@ set one).
 
 ## Troubleshooting
 In case port 514 is already taken or blocked, the syslog recorder can't
-function. You will notice this when opening the web interface. On Windows this
-could be caused by Windows Firewall, third party firewall or virus checker, or the
-presence of Docker or WSL. How to solve it is out of scope for Sylo. Some
-effort has been done to make it visible.
+get hold of it. You will see an error message when opening the web interface. On Windows this
+could be caused by a third party firewall or virus checker that blocks the port, or the
+presence of Docker or WSL. Standard firewall functionality just drops the traffic, this will go unnoticed so there is no error message and no data.
+The Windows Installer writes a firewall rule to avoid that.
+How to solve such problems is out of scope for Sylo. Some effort has been taken to try prevent it and/or make it visible.
 
 ## Authors
-Built with Claude Code as a much valued implementation aid - architectural
+Built with Claude Code as a much valued implementation- and troubleshooting aid - architectural
 decisions were mine.

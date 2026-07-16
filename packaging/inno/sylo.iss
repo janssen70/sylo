@@ -30,6 +30,11 @@
 ; Kept in sync with WebConfig.port's own default by hand; there's no build
 ; step that shares a single source of truth between the two.
 #define MyDefaultPort "8514"
+; Single source of truth for the receiver's firewall rule names, shared
+; between the [Code] section (creates them on install) and [UninstallRun]
+; (removes them on uninstall) so the two can never drift apart.
+#define MyFirewallRuleUdp "Sylo Receiver (UDP 514)"
+#define MyFirewallRuleTcp "Sylo Receiver (TCP 514)"
 
 [Setup]
 AppId={#MyAppId}
@@ -104,6 +109,12 @@ Name: "{autodesktop}\Sylo"; Filename: "{code:GetWebUrl}"; Tasks: desktopicon; Ic
 ; stop/remove pair on every maintenance/repeat install of the same version.
 Filename: "{app}\sylo-receiver.exe";  Parameters: "stop";   Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "StopReceiver"
 Filename: "{app}\sylo-receiver.exe";  Parameters: "remove"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "RemoveReceiver"
+; netsh exits non-zero if the named rule doesn't exist, which is fine here --
+; [UninstallRun] entries don't abort the uninstall on a non-zero exit code,
+; and this makes removal idempotent whether or not ConfigureFirewallRule
+; (below) ever successfully created the rule in the first place.
+Filename: "netsh.exe"; Parameters: "advfirewall firewall delete rule name=""{#MyFirewallRuleUdp}"""; Flags: runhidden waituntilterminated; RunOnceId: "DeleteFirewallRuleUdp"
+Filename: "netsh.exe"; Parameters: "advfirewall firewall delete rule name=""{#MyFirewallRuleTcp}"""; Flags: runhidden waituntilterminated; RunOnceId: "DeleteFirewallRuleTcp"
 Filename: "{app}\sylo-webapp.exe";    Parameters: "stop";   Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "StopWebapp"
 Filename: "{app}\sylo-webapp.exe";    Parameters: "remove"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "RemoveWebapp"
 Filename: "{app}\sylo-retention.exe"; Parameters: "stop";   Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "StopRetention"
@@ -484,6 +495,58 @@ begin
     MsgBox(ServiceName + ' service start exited with code ' + IntToStr(ResultCode) + '.', mbError, MB_OK);
 end;
 
+// Adds an inbound Windows Firewall allow rule scoped to the receiver exe --
+// discovered missing from a real deployment (plan section 11): the receiver
+// binds UDP 514 fine and loopback test traffic gets through, but Windows
+// Firewall silently drops unsolicited inbound traffic from *other* hosts on
+// the network with no matching allow rule present, which from the webapp's
+// side is indistinguishable from "no devices are sending anything." Deletes
+// any existing rule of the same name first, then adds it fresh -- netsh
+// doesn't dedupe by name on its own, so a plain add on every upgrade would
+// otherwise accumulate duplicate rules over repeated installs.
+// Configures SCM-level auto-restart on crash -- equivalent of Services.msc's
+// "Recovery" tab, set here via sc.exe since Inno's [Code] has no built-in
+// API for it. None of the three services had this configured before, which
+// is exactly why SyloRetention (see plan section 9's live-deployment
+// findings) crashed once on its very first start and then sat Stopped
+// forever with nothing to bring it back -- unlike a genuinely unexpected
+// crash elsewhere, which this is meant to catch as the last-resort safety
+// net (the specific "absent data at startup" failure class itself is now
+// also fixed at the source, sylo/retention/main.py's run()).
+// reset=86400: the failure count returns to zero after a full day of
+// uninterrupted running, so an isolated crash from months ago doesn't count
+// toward today's streak. actions: restart after 1 minute for the first two
+// failures, then back off to 5 minutes for the third and any further one in
+// the same day, so a persistently broken service doesn't hammer-restart.
+procedure ConfigureServiceRecovery(ServiceName: String);
+var
+  ResultCode: Integer;
+begin
+  if not Exec('sc.exe',
+    'failure ' + ServiceName + ' reset=86400 actions=restart/60000/restart/60000/restart/300000',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
+    MsgBox('Could not configure automatic restart-on-crash for the ' + ServiceName +
+      ' service. It will still run normally, but a crash will leave it stopped ' +
+      'until manually restarted.', mbError, MB_OK);
+end;
+
+procedure ConfigureFirewallRule(RuleName, Protocol: String);
+var
+  ResultCode: Integer;
+begin
+  Exec('netsh.exe',
+    'advfirewall firewall delete rule name="' + RuleName + '"',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  if not Exec('netsh.exe',
+    'advfirewall firewall add rule name="' + RuleName + '" dir=in action=allow ' +
+      'protocol=' + Protocol + ' localport=514 program="' +
+      ExpandConstant('{app}') + '\sylo-receiver.exe" enable=yes profile=any',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
+    MsgBox('Could not add the Windows Firewall rule "' + RuleName + '" for the ' +
+      'Sylo receiver. Devices on the network may not be able to reach it until ' +
+      'this is added manually.', mbError, MB_OK);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   ReceiverEnv, WebappEnv, RetentionEnv: array of String;
@@ -501,6 +564,9 @@ begin
     ReceiverEnv[0] := 'SYLO_DATA_DIR=' + DataRawDir();
     ReceiverEnv[1] := 'SYLO_INDEX_DIR=' + DataIndexDir();
     InstallService('sylo-receiver.exe', 'SyloReceiver', ReceiverEnv);
+    ConfigureServiceRecovery('SyloReceiver');
+    ConfigureFirewallRule('{#MyFirewallRuleUdp}', 'UDP');
+    ConfigureFirewallRule('{#MyFirewallRuleTcp}', 'TCP');
 
     if AdminPassword <> '' then
     begin
@@ -514,12 +580,14 @@ begin
     WebappEnv[2] := 'SYLO_WEB_PORT=' + PortPage.Values[0];
     WebappEnv[3] := 'SYLO_WEB_BIND_HOST=' + WebBindHost;
     InstallService('sylo-webapp.exe', 'SyloWebapp', WebappEnv);
+    ConfigureServiceRecovery('SyloWebapp');
 
     SetArrayLength(RetentionEnv, 3);
     RetentionEnv[0] := 'SYLO_DATA_DIR=' + DataRawDir();
     RetentionEnv[1] := 'SYLO_INDEX_DIR=' + DataIndexDir();
     RetentionEnv[2] := 'SYLO_APP_DB=' + AppDbPath();
     InstallService('sylo-retention.exe', 'SyloRetention', RetentionEnv);
+    ConfigureServiceRecovery('SyloRetention');
   end;
 end;
 

@@ -10,6 +10,12 @@ from .core import RetentionSummary, run_retention
 
 logger = logging.getLogger("sylo.retention")
 
+# Backoff used when a pass fails before it even gets a usable interval to
+# sleep on (e.g. config loading itself raised) -- short, so a transient
+# startup race clears quickly, but nonzero so a persistently broken
+# environment doesn't spin the loop.
+_SETUP_FAILURE_RETRY_SECONDS = 60.0
+
 
 def _log_summary(summary: RetentionSummary) -> None:
     logger.info(
@@ -28,8 +34,20 @@ async def run(config: RetentionConfig | None = None, stop_event: asyncio.Event |
     receiver.main.run, for the same reason: a future service wrapper's
     SvcStop needs to cross from the SCM's thread into this loop's thread via
     call_soon_threadsafe.
+
+    Loading config is deliberately re-attempted inside the loop's own
+    try/except on every pass, rather than resolved once up front, so that a
+    failure there (or anywhere else in a pass -- run_retention already
+    tolerates missing data/index directories on its own, see core.py) is
+    just another caught, logged, retried pass -- never an exception that
+    escapes run() and takes the whole service down with it. A real
+    deployment hit exactly the up-front version of this: the retention
+    service crashed on its very first start, seconds after install and
+    before app.sqlite3 existed yet, and -- with no service recovery action
+    configured (see sylo.iss) -- simply stayed dead from then on. Mirrors
+    the "never let a startup problem kill the process" philosophy already
+    applied to the receiver (plan section 11).
     """
-    config = config or RetentionConfig.from_env()
     stop_event = stop_event or asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -39,14 +57,17 @@ async def run(config: RetentionConfig | None = None, stop_event: asyncio.Event |
             pass  # signal handlers on the event loop aren't available on Windows
 
     while True:
+        wait_seconds = _SETUP_FAILURE_RETRY_SECONDS
         try:
-            summary = await loop.run_in_executor(None, run_retention, config)
+            active_config = config or RetentionConfig.from_env()
+            summary = await loop.run_in_executor(None, run_retention, active_config)
             _log_summary(summary)
+            wait_seconds = active_config.run_interval_seconds
         except Exception:
-            logger.exception("retention pass failed")
+            logger.exception("retention pass failed -- will retry")
 
         try:
-            await asyncio.wait_for(stop_event.wait(), timeout=config.run_interval_seconds)
+            await asyncio.wait_for(stop_event.wait(), timeout=wait_seconds)
         except asyncio.TimeoutError:
             continue
         break
